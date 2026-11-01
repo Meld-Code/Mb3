@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FreeForm | Sword Fight</title>
+<style>
+* { box-sizing: border-box; }
+body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; background: #dedede; }
+#mainView { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; outline: none; touch-action: none; }
+#hud { position: fixed; z-index: 5; top: 14px; left: 14px; width: 150px; padding: 14px; color: #000; background: #ffffffdf; line-height: 1.65; }
+button { margin: 5px 4px 0 0; padding: 7px 9px; border: 1px solid #999; border-radius: 4px; background: #fff; cursor: pointer; }
+#leaveRoom { display:block; color:#111; font-size:12px; margin-top:7px; }
+@media (max-width: 600px) { #hud { top: 8px; left: 8px; width: 180px; padding: 10px; font-size: 13px; } }
+</style>
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/" } }
+</script>
+</head>
+<body>
+<canvas id="mainView" tabindex="0"></canvas>
+<div id="hud">
+  <button id="toggleHitbox" type="button">Hide hitbox</button>
+  <a id="leaveRoom" href="index.html">Leave Sword Fight</a>
+</div>
+<script src="assets/freeform.js"></script>
+<script type="module">
+import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+
+const canvas = document.getElementById('mainView');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xdedede);
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x777777, 2));
+const sun = new THREE.DirectionalLight(0xffffff, 2);
+sun.position.set(8, 15, 10);
+sun.castShadow = true;
+sun.shadow.mapSize.set(1024, 1024);
+scene.add(sun);
+
+// The entire environment is one plain ground plane—no walls, platforms, props, or obstacles.
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(1000, 1000),
+  new THREE.MeshStandardMaterial({ color: 0xaaaaaa, roughness: 1 })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.position.y = -0.035;
+ground.receiveShadow = true;
+scene.add(ground);
+
+const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 500);
+
+// Character model copied in structure and proportions from Character.html's Player Hitbox Demo.
+function createCharacter(color = 0x888888) {
+  const root = new THREE.Group();
+  const model = new THREE.Group();
+  root.add(model);
+  const material = new THREE.MeshStandardMaterial({ color, roughness: 0.9 });
+
+  function addBox(name, size, position, parent = model) {
+    const mesh = new THREE.Mesh(new RoundedBoxGeometry(size[0], size[1], size[2], 2, 0.05), material);
+    mesh.name = name;
+    mesh.position.set(...position);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    parent.add(mesh);
+    return mesh;
+  }
+
+  const headRadius = 0.6;
+  const headHeight = 1.1;
+  const headBevel = 0.16;
+  const headProfile = [
+    new THREE.Vector2(0, -headHeight / 2),
+    new THREE.Vector2(headRadius - headBevel, -headHeight / 2),
+    new THREE.Vector2(headRadius, -headHeight / 2 + headBevel),
+    new THREE.Vector2(headRadius, headHeight / 2 - headBevel),
+    new THREE.Vector2(headRadius - headBevel, headHeight / 2),
+    new THREE.Vector2(0, headHeight / 2)
+  ];
+  const head = new THREE.Mesh(new THREE.LatheGeometry(headProfile, 32), material);
+  head.name = 'Head';
+  head.position.set(0, 4.5, 0);
+  head.castShadow = true;
+  head.receiveShadow = true;
+  model.add(head);
+
+  addBox('Torso', [2, 2, 1], [0, 3, 0]);
+  function makeArm(name, x) {
+    const pivot = new THREE.Group();
+    pivot.position.set(x, 4, 0);
+    model.add(pivot);
+    addBox(name, [1, 2, 1], [0, -1, 0], pivot);
+    return pivot;
+  }
+  function makeLeg(name, x) {
+    const pivot = new THREE.Group();
+    pivot.position.set(x, 2, 0);
+    model.add(pivot);
+    addBox(name, [1, 2, 1], [0, -1, 0], pivot);
+    return pivot;
+  }
+  const arms = [makeArm('Left Arm', -1.5), makeArm('Right Arm', 1.5)];
+  const legs = [makeLeg('Left Leg', -0.5), makeLeg('Right Leg', 0.5)];
+  root.userData.arms = arms;
+  root.userData.legs = legs;
+  root.userData.limbs = [...arms, ...legs];
+  root.userData.model = model;
+  return root;
+}
+
+function createNameLabel(text) {
+  const labelCanvas = document.createElement('canvas');
+  labelCanvas.width = 512;
+  labelCanvas.height = 128;
+  const context = labelCanvas.getContext('2d');
+  context.clearRect(0, 0, labelCanvas.width, labelCanvas.height);
+  context.font = 'bold 48px Arial';
+  context.textAlign = 'center';
+  context.textBaseline = 'middle';
+  context.lineWidth = 9;
+  context.strokeStyle = 'rgba(0,0,0,0.85)';
+  context.strokeText(text, labelCanvas.width / 2, labelCanvas.height / 2);
+  context.fillStyle = '#ffffff';
+  context.fillText(text, labelCanvas.width / 2, labelCanvas.height / 2);
+  const texture = new THREE.CanvasTexture(labelCanvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false }));
+  sprite.scale.set(3.5, 0.88, 1);
+  sprite.position.set(0, 6.15, 0);
+  sprite.renderOrder = 10;
+  return sprite;
+}
+
+function currentUsername() {
+  return window.FreeForm?.getSession?.() || 'Player';
+}
+const player = createCharacter(0x888888);
+scene.add(player);
+player.add(createNameLabel(currentUsername()));
+
+const hitbox = new THREE.Mesh(
+  new THREE.BoxGeometry(2.2, 5.6, 1.2),
+  new THREE.MeshBasicMaterial({ color: 0xff2020, wireframe: true, transparent: true, opacity: 0.95 })
+);
+scene.add(hitbox);
+let hitboxVisible = true;
+const hitboxButton = document.getElementById('toggleHitbox');
+hitboxButton.addEventListener('click', () => {
+  hitboxVisible = !hitboxVisible;
+  hitbox.visible = hitboxVisible;
+  hitboxButton.textContent = hitboxVisible ? 'Hide hitbox' : 'Show hitbox';
+});
+
+canvas.addEventListener('click', () => {
+  if (document.pointerLockElement !== canvas) canvas.requestPointerLock?.();
+});
+const keys = Object.create(null);
+let verticalVelocity = 0;
+let grounded = true;
+let walkTime = 0;
+window.addEventListener('keydown', event => {
+  keys[event.code] = true;
+  if (event.code === 'Space') {
+    event.preventDefault();
+    if (grounded) { verticalVelocity = 8.5; grounded = false; }
+  }
+});
+window.addEventListener('keyup', event => { keys[event.code] = false; });
+window.addEventListener('blur', () => { for (const key in keys) keys[key] = false; });
+
+let cameraYaw = 0;
+let cameraPitch = 0.18;
+let targetZoom = 9;
+let currentZoom = 9;
+let dragging = false;
+let lastX = 0;
+let lastY = 0;
+document.addEventListener('mousemove', event => {
+  if (document.pointerLockElement === canvas) {
+    cameraYaw -= event.movementX * 0.006;
+    cameraPitch += event.movementY * 0.004;
+    cameraPitch = THREE.MathUtils.clamp(cameraPitch, -1.0, 1.1);
+  }
+});
+canvas.addEventListener('pointerdown', event => {
+  if (document.pointerLockElement === canvas) return;
+  dragging = true; lastX = event.clientX; lastY = event.clientY;
+  canvas.setPointerCapture(event.pointerId);
+});
+canvas.addEventListener('pointerup', () => { dragging = false; });
+canvas.addEventListener('pointercancel', () => { dragging = false; });
+canvas.addEventListener('pointermove', event => {
+  if (!dragging || document.pointerLockElement === canvas) return;
+  cameraYaw -= (event.clientX - lastX) * 0.006;
+  cameraPitch += (event.clientY - lastY) * 0.004;
+  cameraPitch = THREE.MathUtils.clamp(cameraPitch, -1.0, 1.1);
+  lastX = event.clientX; lastY = event.clientY;
+});
+canvas.addEventListener('wheel', event => {
+  event.preventDefault();
+  targetZoom += event.deltaY * 0.012;
+  targetZoom = THREE.MathUtils.clamp(targetZoom, 2.5, 22);
+}, { passive: false });
+
+const clock = new THREE.Clock();
+const direction = new THREE.Vector3();
+const forward = new THREE.Vector3();
+const right = new THREE.Vector3();
+const cameraTarget = new THREE.Vector3();
+const lookTarget = new THREE.Vector3();
+const PLAYER_SPEED = 9;
+const TURN_SPEED = 18;
+function smoothAngle(current, target, amount) {
+  const difference = Math.atan2(Math.sin(target - current), Math.cos(target - current));
+  return current + difference * amount;
+}
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  forward.set(-Math.sin(cameraYaw), 0, -Math.cos(cameraYaw));
+  right.set(Math.cos(cameraYaw), 0, -Math.sin(cameraYaw));
+  direction.set(0, 0, 0);
+  if (keys.KeyW) direction.add(forward);
+  if (keys.KeyS) direction.sub(forward);
+  if (keys.KeyA) direction.sub(right);
+  if (keys.KeyD) direction.add(right);
+  if (direction.lengthSq() > 0) {
+    direction.normalize();
+    player.position.addScaledVector(direction, PLAYER_SPEED * dt);
+    const desiredRotation = Math.atan2(-direction.x, -direction.z);
+    player.rotation.y = smoothAngle(player.rotation.y, desiredRotation, 1 - Math.exp(-TURN_SPEED * dt));
+    walkTime += dt * 11;
+    player.userData.legs[0].rotation.x = Math.sin(walkTime) * 0.65;
+    player.userData.legs[1].rotation.x = -Math.sin(walkTime) * 0.65;
+    player.userData.arms[0].rotation.x = -Math.sin(walkTime) * 0.45;
+    player.userData.arms[1].rotation.x = Math.sin(walkTime) * 0.45;
+  } else {
+    player.userData.limbs.forEach(limb => { limb.rotation.x = THREE.MathUtils.damp(limb.rotation.x, 0, 12, dt); });
+  }
+  verticalVelocity -= 22 * dt;
+  player.position.y += verticalVelocity * dt;
+  if (player.position.y <= 0) { player.position.y = 0; verticalVelocity = 0; grounded = true; }
+  hitbox.position.set(player.position.x, player.position.y + 2.8, player.position.z);
+  hitbox.rotation.y = player.rotation.y;
+  currentZoom = THREE.MathUtils.damp(currentZoom, targetZoom, 10, dt);
+  const horizontalDistance = currentZoom * Math.cos(cameraPitch);
+  cameraTarget.set(
+    player.position.x + Math.sin(cameraYaw) * horizontalDistance,
+    player.position.y + 2.5 + currentZoom * Math.sin(cameraPitch),
+    player.position.z + Math.cos(cameraYaw) * horizontalDistance
+  );
+  camera.position.lerp(cameraTarget, 1 - Math.exp(-8 * dt));
+  lookTarget.set(player.position.x, player.position.y + 2.5, player.position.z);
+  camera.lookAt(lookTarget);
+  renderer.render(scene, camera);
+}
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+camera.aspect = window.innerWidth / window.innerHeight;
+camera.updateProjectionMatrix();
+animate();
+
+// Keep the same exact character geometry for other signed-in players in this room.
+import('./assets/room-multiplayer.js').then(({ connectRoom }) => connectRoom({
+  THREE, scene, player,
+  makeAvatar: colors => createCharacter(colors?.body || 0x888888),
+  label: createNameLabel,
+  room: 'swordFight'
+})).catch(error => console.warn('FreeForm multiplayer could not start:', error));
+</script>
+</body>
+</html>

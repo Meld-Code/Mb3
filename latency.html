@@ -1,0 +1,1008 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Latency POV Demo</title>
+<style>
+* { box-sizing: border-box; }
+body {
+margin: 0;
+overflow: hidden;
+font-family: Arial, sans-serif;
+background: #dedede;
+}
+#mainView {
+position: fixed;
+inset: 0;
+width: 100%;
+height: 100%;
+display: block;
+}
+#hud {
+position: fixed;
+z-index: 5;
+top: 14px;
+left: 14px;
+width: 275px;
+padding: 14px;
+color: #000;
+background: #ffffffdf;
+line-height: 1.65;
+}
+#latency {
+width: 100%;
+accent-color: #ff8800;
+}
+button {
+margin: 5px 4px 0 0;
+padding: 7px 9px;
+border: 1px solid #999;
+border-radius: 4px;
+background: #fff;
+cursor: pointer;
+}
+button:disabled {
+cursor: default;
+opacity: 0.65;
+}
+#botViewWrap {
+position: fixed;
+z-index: 6;
+top: 14px;
+right: 14px;
+width: min(32vw, 340px);
+min-width: 200px;
+aspect-ratio: 16 / 10;
+border: 3px solid #3976d2;
+background: #333;
+box-shadow: 0 3px 14px #0005;
+}
+#botViewLabel {
+position: absolute;
+z-index: 2;
+top: 0;
+left: 0;
+padding: 5px 8px;
+color: white;
+background: #163e7bd9;
+font-size: 12px;
+font-weight: bold;
+letter-spacing: 0.04em;
+}
+#botView {
+display: block;
+width: 100%;
+height: 100%;
+}
+#pow {
+position: fixed;
+z-index: 10;
+left: 50%;
+top: 42%;
+transform: translate(-50%, -50%) scale(0.5);
+color: #ff3b20;
+font-size: clamp(48px, 10vw, 120px);
+font-weight: 900;
+text-shadow: 3px 3px 0 #fff, 6px 6px 0 #222;
+opacity: 0;
+pointer-events: none;
+}
+#pow.show {
+animation: pow-pop 650ms ease-out forwards;
+}
+@keyframes pow-pop {
+0% { opacity: 0; transform: translate(-50%, -50%) scale(0.35) rotate(-12deg); }
+20% { opacity: 1; transform: translate(-50%, -50%) scale(1.2) rotate(8deg); }
+45% { transform: translate(-50%, -50%) scale(1) rotate(-4deg); }
+100% { opacity: 0; transform: translate(-50%, -50%) scale(0.9); }
+}
+#gameOver {
+display: none;
+position: fixed;
+z-index: 9;
+inset: 0;
+align-items: center;
+justify-content: center;
+flex-direction: column;
+color: white;
+background: #0009;
+text-align: center;
+}
+#gameOver.visible { display: flex; }
+#gameOver h1 {
+margin: 0 0 8px;
+font-size: clamp(38px, 8vw, 78px);
+}
+#gameOver button {
+padding: 10px 16px;
+font-size: 16px;
+}
+@media (max-width: 600px) {
+#hud {
+top: 8px;
+left: 8px;
+width: 220px;
+padding: 10px;
+font-size: 13px;
+}
+#botViewWrap {
+top: auto;
+right: 8px;
+bottom: 8px;
+width: 42vw;
+min-width: 150px;
+}
+}
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<canvas id="mainView"></canvas>
+<div id="hud">
+  Ping: <span id="ping">150</span> ms<br>
+  Display delay: <span id="delay">150</span> ms<br>
+  Other player: <span id="otherStatus">Not started</span><br>
+  <label for="latency">Simulated latency</label>
+  <input id="latency" type="range" min="50" max="1000" step="10" value="150">
+  <br>
+  <button id="startOther" type="button">Start other player</button>
+  <button id="toggleHitbox" type="button">Hide hitbox</button>
+  <button id="toggleGhost" type="button">Hide ghost</button>
+</div>
+<div id="botViewWrap">
+  <div id="botViewLabel">OTHER PLAYER POV</div>
+  <canvas id="botView"></canvas>
+</div>
+<div id="pow" aria-live="polite">Killed</div>
+<div id="gameOver">
+  <h1>HIT!</h1>
+  <div>The knife hit the delayed ghost.</div>
+  <button id="restart" type="button">Reset demo</button>
+</div>
+<script src="assets/freeform.js"></script>
+<script type="module">
+import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+
+// ======================================
+// TWO POV SCENES
+// ======================================
+const mainScene = new THREE.Scene();
+mainScene.background = new THREE.Color(0xdedede);
+
+const otherScene = new THREE.Scene();
+otherScene.background = new THREE.Color(0xdedede);
+
+const mainRenderer = new THREE.WebGLRenderer({
+  canvas: document.getElementById('mainView'),
+  antialias: true
+});
+mainRenderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+mainRenderer.outputColorSpace = THREE.SRGBColorSpace;
+mainRenderer.setSize(innerWidth, innerHeight);
+
+const otherRenderer = new THREE.WebGLRenderer({
+  canvas: document.getElementById('botView'),
+  antialias: true
+});
+otherRenderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+otherRenderer.outputColorSpace = THREE.SRGBColorSpace;
+
+function addLighting(scene) {
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x777777, 2));
+
+  const sun = new THREE.DirectionalLight(0xffffff, 2);
+  sun.position.set(8, 15, 10);
+  sun.castShadow = true;
+  scene.add(sun);
+}
+
+addLighting(mainScene);
+addLighting(otherScene);
+
+const mainCamera = new THREE.PerspectiveCamera(65, innerWidth / innerHeight, 0.1, 500);
+const otherCamera = new THREE.PerspectiveCamera(72, 1, 0.1, 250);
+
+// ======================================
+// GROUND
+// ======================================
+function createGround(scene) {
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(300, 300),
+    new THREE.MeshStandardMaterial({ color: 0xd0d0d0, roughness: 1 })
+  );
+  ground.rotation.x = -Math.PI / 2;
+  ground.receiveShadow = true;
+  scene.add(ground);
+
+  const grid = new THREE.GridHelper(300, 100, 0xb0b0b0, 0xc7c7c7);
+  grid.position.y = 0.01;
+  scene.add(grid);
+}
+
+createGround(mainScene);
+createGround(otherScene);
+
+// ======================================
+// CHARACTER CREATION
+// ======================================
+function createCharacter(color, customize = false) {
+  const root = new THREE.Group();
+  const model = new THREE.Group();
+  root.add(model);
+
+  const avatarColors = customize && window.FreeForm ? window.FreeForm.getAvatar() : null;
+  const material = new THREE.MeshStandardMaterial({ color: avatarColors ? avatarColors.body : color, roughness: 0.9 });
+  const headMaterial = new THREE.MeshStandardMaterial({ color: avatarColors ? avatarColors.head : color, roughness: 0.9 });
+  const legMaterial = new THREE.MeshStandardMaterial({ color: avatarColors ? avatarColors.legs : color, roughness: 0.9 });
+
+  function addBox(name, size, position, parent = model) {
+    const mesh = new THREE.Mesh(
+      new RoundedBoxGeometry(size[0], size[1], size[2], 2, 0.05),
+      /Leg/.test(name) ? legMaterial : material
+    );
+    mesh.name = name;
+    mesh.position.set(...position);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    parent.add(mesh);
+    return mesh;
+  }
+
+  const headRadius = 0.6;
+  const headHeight = 1.1;
+  const headBevel = 0.16;
+  const headProfile = [
+    new THREE.Vector2(0, -headHeight / 2),
+    new THREE.Vector2(headRadius - headBevel, -headHeight / 2),
+    new THREE.Vector2(headRadius, -headHeight / 2 + headBevel),
+    new THREE.Vector2(headRadius, headHeight / 2 - headBevel),
+    new THREE.Vector2(headRadius - headBevel, headHeight / 2),
+    new THREE.Vector2(0, headHeight / 2)
+  ];
+
+  const head = new THREE.Mesh(
+    new THREE.LatheGeometry(headProfile, 32),
+    headMaterial
+  );
+  head.name = 'Head';
+  head.position.set(0, 4.5, 0);
+  head.castShadow = true;
+  head.receiveShadow = true;
+  model.add(head);
+  const faceTexture = new THREE.TextureLoader().load('assets/default-face.svg');
+  faceTexture.colorSpace = THREE.SRGBColorSpace;
+  const face = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.72, 0.72),
+    new THREE.MeshBasicMaterial({ map: faceTexture, transparent: true, depthWrite: false })
+  );
+  face.position.set(0, 4.5, -0.585);
+  face.rotation.y = Math.PI;
+  face.renderOrder = 3;
+  model.add(face);
+
+  addBox('Torso', [2, 2, 1], [0, 3, 0]);
+
+  function makeArm(name, x) {
+    const pivot = new THREE.Group();
+    pivot.position.set(x, 4, 0);
+    model.add(pivot);
+    addBox(name, [1, 2, 1], [0, -1, 0], pivot);
+    return pivot;
+  }
+
+  function makeLeg(name, x) {
+    const pivot = new THREE.Group();
+    pivot.position.set(x, 2, 0);
+    model.add(pivot);
+    addBox(name, [1, 2, 1], [0, -1, 0], pivot);
+    return pivot;
+  }
+
+  const arms = [makeArm('Left Arm', -1.5), makeArm('Right Arm', 1.5)];
+  const legs = [makeLeg('Left Leg', -0.5), makeLeg('Right Leg', 0.5)];
+
+  root.userData.arms = arms;
+  root.userData.legs = legs;
+  root.userData.limbs = [...arms, ...legs];
+  return root;
+}
+
+// Main POV: live player gray, delayed ghost orange.
+// Other POV: live player orange, delayed ghost gray.
+const mainPlayer = createCharacter(0x888888, true);
+const mainGhost = createCharacter(0xff851f);
+const mainOtherPlayer = createCharacter(0x3976d2);
+
+const otherViewPlayer = createCharacter(0xff851f);
+const otherViewGhost = createCharacter(0x888888, true);
+const otherViewOtherPlayer = createCharacter(0x3976d2);
+
+mainScene.add(mainPlayer, mainGhost, mainOtherPlayer);
+otherScene.add(otherViewPlayer, otherViewGhost, otherViewOtherPlayer);
+
+// ======================================
+// NAME LABELS
+// ======================================
+function createNameLabel(text) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 128;
+
+  const context = canvas.getContext('2d');
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.font = 'bold 48px Arial';
+  context.textAlign = 'center';
+  context.textBaseline = 'middle';
+
+  context.lineWidth = 9;
+  context.strokeStyle = 'rgba(0,0,0,0.85)';
+  context.strokeText(text, canvas.width / 2, canvas.height / 2);
+  context.fillStyle = '#ffffff';
+  context.fillText(text, canvas.width / 2, canvas.height / 2);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+
+  const sprite = new THREE.Sprite(
+    new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      depthTest: false
+    })
+  );
+  sprite.scale.set(3.5, 0.88, 1);
+  sprite.position.set(0, 6.15, 0);
+  sprite.renderOrder = 10;
+  return sprite;
+}
+
+function addNameLabel(character, name) {
+  character.add(createNameLabel(name));
+}
+
+addNameLabel(mainPlayer, window.FreeForm ? (window.FreeForm.getSession() || 'Guest') : 'Guest');
+addNameLabel(mainGhost, 'delay');
+addNameLabel(mainOtherPlayer, 'Other Player');
+
+addNameLabel(otherViewPlayer, 'delay');
+addNameLabel(otherViewGhost, window.FreeForm ? (window.FreeForm.getSession() || 'Guest') : 'Guest');
+addNameLabel(otherViewOtherPlayer, 'Other Player');
+
+// ======================================
+// HITBOXES
+// ======================================
+function createHitbox() {
+  return new THREE.Mesh(
+    new THREE.BoxGeometry(2.2, 5.6, 1.2),
+    new THREE.MeshBasicMaterial({
+      color: 0xff2020,
+      wireframe: true,
+      transparent: true,
+      opacity: 0.95
+    })
+  );
+}
+
+const mainHitbox = createHitbox();
+const otherHitbox = createHitbox();
+mainScene.add(mainHitbox);
+otherScene.add(otherHitbox);
+
+let hitboxVisible = true;
+let ghostVisible = true;
+let otherPlayerStarted = false;
+let gameEnded = false;
+
+const hitboxButton = document.getElementById('toggleHitbox');
+const ghostButton = document.getElementById('toggleGhost');
+const startOtherButton = document.getElementById('startOther');
+const otherStatus = document.getElementById('otherStatus');
+
+function applyVisualToggles() {
+  mainHitbox.visible = hitboxVisible;
+  otherHitbox.visible = hitboxVisible;
+  mainGhost.visible = ghostVisible;
+  otherViewGhost.visible = ghostVisible;
+}
+
+hitboxButton.addEventListener('click', () => {
+  hitboxVisible = !hitboxVisible;
+  applyVisualToggles();
+  hitboxButton.textContent = hitboxVisible ? 'Hide hitbox' : 'Show hitbox';
+});
+
+ghostButton.addEventListener('click', () => {
+  ghostVisible = !ghostVisible;
+  applyVisualToggles();
+  ghostButton.textContent = ghostVisible ? 'Hide ghost' : 'Show ghost';
+});
+
+let lastThrowTime = 0;
+
+startOtherButton.addEventListener('click', () => {
+  if (otherPlayerStarted) return;
+
+  otherPlayerStarted = true;
+  startOtherButton.disabled = true;
+  startOtherButton.textContent = 'Other player started';
+  otherStatus.textContent = 'Active';
+  lastThrowTime = performance.now();
+});
+
+// ======================================
+// PLAYER INPUT
+// ======================================
+const keys = Object.create(null);
+let verticalVelocity = 0;
+let grounded = true;
+let walkTime = 0;
+
+addEventListener('keydown', event => {
+  keys[event.code] = true;
+
+  if (event.code === 'Space') {
+    event.preventDefault();
+    if (grounded && !gameEnded) {
+      verticalVelocity = 8.5;
+      grounded = false;
+    }
+  }
+});
+
+addEventListener('keyup', event => {
+  keys[event.code] = false;
+});
+
+addEventListener('blur', () => {
+  for (const key in keys) keys[key] = false;
+});
+
+// ======================================
+// MAIN CAMERA CONTROLS
+// ======================================
+let cameraYaw = 0;
+let cameraPitch = 0.18;
+let targetZoom = 9;
+let currentZoom = 9;
+let dragging = false;
+let lastX = 0;
+let lastY = 0;
+
+mainRenderer.domElement.addEventListener('pointerdown', event => {
+  dragging = true;
+  lastX = event.clientX;
+  lastY = event.clientY;
+  mainRenderer.domElement.setPointerCapture(event.pointerId);
+});
+
+mainRenderer.domElement.addEventListener('pointerup', () => dragging = false);
+mainRenderer.domElement.addEventListener('pointercancel', () => dragging = false);
+
+mainRenderer.domElement.addEventListener('pointermove', event => {
+  if (!dragging) return;
+
+  cameraYaw -= (event.clientX - lastX) * 0.006;
+  cameraPitch += (event.clientY - lastY) * 0.004;
+  cameraPitch = THREE.MathUtils.clamp(cameraPitch, -1.0, 1.1);
+
+  lastX = event.clientX;
+  lastY = event.clientY;
+});
+
+mainRenderer.domElement.addEventListener('wheel', event => {
+  event.preventDefault();
+  targetZoom += event.deltaY * 0.012;
+  targetZoom = THREE.MathUtils.clamp(targetZoom, 2.5, 22);
+}, { passive: false });
+
+// ======================================
+// LATENCY
+// ======================================
+const slider = document.getElementById('latency');
+const pingLabel = document.getElementById('ping');
+const delayLabel = document.getElementById('delay');
+let latency = Number(slider.value);
+
+slider.addEventListener('input', () => {
+  latency = Number(slider.value);
+  pingLabel.textContent = latency;
+  delayLabel.textContent = latency;
+});
+
+// ======================================
+// MOVEMENT HISTORY
+// ======================================
+const history = [];
+const clock = new THREE.Clock();
+
+function saveState(time) {
+  return {
+    time,
+    position: mainPlayer.position.clone(),
+    rotation: mainPlayer.rotation.y,
+    limbs: mainPlayer.userData.limbs.map(limb => limb.rotation.x)
+  };
+}
+
+function getDelayedState(targetTime) {
+  if (history.length < 2) return null;
+
+  let index = 0;
+  while (index < history.length - 2 && history[index + 1].time < targetTime) {
+    index++;
+  }
+
+  const a = history[index];
+  const b = history[Math.min(index + 1, history.length - 1)];
+  const span = b.time - a.time;
+  const amount = span > 0
+    ? THREE.MathUtils.clamp((targetTime - a.time) / span, 0, 1)
+    : 0;
+
+  const angleDifference = Math.atan2(
+    Math.sin(b.rotation - a.rotation),
+    Math.cos(b.rotation - a.rotation)
+  );
+
+  return {
+    position: a.position.clone().lerp(b.position, amount),
+    rotation: a.rotation + angleDifference * amount,
+    limbs: a.limbs.map((value, limbIndex) =>
+      THREE.MathUtils.lerp(value, b.limbs[limbIndex], amount)
+    )
+  };
+}
+
+function copyCharacterTransform(source, target) {
+  target.position.copy(source.position);
+  target.rotation.copy(source.rotation);
+  target.userData.limbs.forEach((limb, index) => {
+    limb.rotation.copy(source.userData.limbs[index].rotation);
+  });
+}
+
+function updateGhost(now) {
+  // Keep the orange live player moving in the other POV with your actual movement.
+  copyCharacterTransform(mainPlayer, otherViewPlayer);
+
+  const delayedState = getDelayedState(now - latency);
+  if (!delayedState) return;
+
+  // Apply identical delayed coordinates to both POV copies.
+  mainGhost.position.copy(delayedState.position);
+  otherViewGhost.position.copy(delayedState.position);
+
+  mainGhost.position.y = Math.min(mainGhost.position.y, mainPlayer.position.y);
+  otherViewGhost.position.y = mainGhost.position.y;
+
+  mainGhost.rotation.y = delayedState.rotation;
+  otherViewGhost.rotation.y = delayedState.rotation;
+
+  mainGhost.userData.limbs.forEach((limb, index) => {
+    limb.rotation.x = delayedState.limbs[index];
+    otherViewGhost.userData.limbs[index].rotation.x = delayedState.limbs[index];
+  });
+
+  const hitboxPosition = new THREE.Vector3(
+    delayedState.position.x,
+    delayedState.position.y + 2.8,
+    delayedState.position.z
+  );
+
+  mainHitbox.position.copy(hitboxPosition);
+  otherHitbox.position.copy(hitboxPosition);
+  mainHitbox.rotation.y = delayedState.rotation;
+  otherHitbox.rotation.y = delayedState.rotation;
+}
+
+// ======================================
+// KNIVES AND THROW ANIMATION
+// ======================================
+const knives = [];
+const knifeGeometry = new THREE.BoxGeometry(0.12, 0.12, 0.9);
+const knifeMaterial = new THREE.MeshStandardMaterial({
+  color: 0x333333,
+  metalness: 0.75,
+  roughness: 0.3
+});
+
+const powElement = document.getElementById('pow');
+const gameOverElement = document.getElementById('gameOver');
+
+let powTimer = null;
+let throwPhase = 'idle';
+let throwPhaseTime = 0;
+
+const OTHER_PLAYER_SPEED = 6.2;
+const THROW_INTERVAL_MS = 1800;
+const KNIFE_SPEED = 23;
+const KNIFE_LIFETIME = 4;
+
+const ARM_EXTENDED = -0.45;
+const ARM_WINDUP = -1.85;
+const ARM_RELEASE = 0.65;
+const WINDUP_DURATION = 300;
+const RELEASE_DURATION = 170;
+const RECOVER_DURATION = 260;
+
+function setOtherArmRotation(value) {
+  mainOtherPlayer.userData.arms[1].rotation.x = value;
+  otherViewOtherPlayer.userData.arms[1].rotation.x = value;
+}
+
+setOtherArmRotation(ARM_EXTENDED);
+
+function showPow() {
+  powElement.classList.remove('show');
+  void powElement.offsetWidth;
+  powElement.classList.add('show');
+
+  clearTimeout(powTimer);
+  powTimer = setTimeout(() => powElement.classList.remove('show'), 700);
+}
+
+function addKnifeMeshes(knife) {
+  knife.mainMesh = new THREE.Mesh(knifeGeometry, knifeMaterial);
+  knife.otherMesh = new THREE.Mesh(knifeGeometry, knifeMaterial);
+  knife.mainMesh.castShadow = true;
+  knife.otherMesh.castShadow = true;
+  mainScene.add(knife.mainMesh);
+  otherScene.add(knife.otherMesh);
+}
+
+function removeKnifeMeshes(knife) {
+  mainScene.remove(knife.mainMesh);
+  otherScene.remove(knife.otherMesh);
+}
+
+function throwKnife(now) {
+  const origin = mainOtherPlayer.position.clone();
+  origin.y += 3.8;
+
+  // Aim at the delayed ghost: orange in your view, gray in the inset.
+  const target = mainGhost.position.clone();
+  target.y += 2.8;
+
+  const velocity = target.sub(origin).normalize().multiplyScalar(KNIFE_SPEED);
+  const knife = {
+    position: origin.clone(),
+    velocity,
+    life: 0,
+    mainMesh: null,
+    otherMesh: null
+  };
+
+  addKnifeMeshes(knife);
+
+  for (const mesh of [knife.mainMesh, knife.otherMesh]) {
+    mesh.position.copy(origin);
+    mesh.quaternion.setFromUnitVectors(
+      new THREE.Vector3(0, 0, 1),
+      velocity.clone().normalize()
+    );
+  }
+
+  knives.push(knife);
+}
+
+function knifeHitsDelayedHitbox(from, to) {
+  const center = mainHitbox.position;
+  const halfX = 1.25;
+  const halfY = 2.95;
+  const halfZ = 0.9;
+  const samples = 12;
+
+  for (let i = 0; i <= samples; i++) {
+    const t = i / samples;
+    const x = THREE.MathUtils.lerp(from.x, to.x, t);
+    const y = THREE.MathUtils.lerp(from.y, to.y, t);
+    const z = THREE.MathUtils.lerp(from.z, to.z, t);
+
+    if (
+      Math.abs(x - center.x) <= halfX &&
+      Math.abs(y - center.y) <= halfY &&
+      Math.abs(z - center.z) <= halfZ
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function finishRound() {
+  if (gameEnded) return;
+  gameEnded = true;
+  otherStatus.textContent = 'Hit the delayed ghost';
+  gameOverElement.classList.add('visible');
+}
+
+function updateThrowAnimation(dt, now) {
+  if (throwPhase === 'idle') {
+    setOtherArmRotation(ARM_EXTENDED);
+
+    if (now - lastThrowTime >= THROW_INTERVAL_MS) {
+      throwPhase = 'windup';
+      throwPhaseTime = 0;
+      lastThrowTime = now;
+    }
+    return;
+  }
+
+  throwPhaseTime += dt * 1000;
+
+  if (throwPhase === 'windup') {
+    const t = THREE.MathUtils.clamp(throwPhaseTime / WINDUP_DURATION, 0, 1);
+    const eased = t * t * (3 - 2 * t);
+    setOtherArmRotation(THREE.MathUtils.lerp(ARM_EXTENDED, ARM_WINDUP, eased));
+
+    if (t >= 1) {
+      throwPhase = 'release';
+      throwPhaseTime = 0;
+      throwKnife(now);
+    }
+    return;
+  }
+
+  if (throwPhase === 'release') {
+    const t = THREE.MathUtils.clamp(throwPhaseTime / RELEASE_DURATION, 0, 1);
+    const eased = 1 - Math.pow(1 - t, 3);
+    setOtherArmRotation(THREE.MathUtils.lerp(ARM_WINDUP, ARM_RELEASE, eased));
+
+    if (t >= 1) {
+      throwPhase = 'recover';
+      throwPhaseTime = 0;
+    }
+    return;
+  }
+
+  if (throwPhase === 'recover') {
+    const t = THREE.MathUtils.clamp(throwPhaseTime / RECOVER_DURATION, 0, 1);
+    const eased = t * t * (3 - 2 * t);
+    setOtherArmRotation(THREE.MathUtils.lerp(ARM_RELEASE, ARM_EXTENDED, eased));
+
+    if (t >= 1) {
+      throwPhase = 'idle';
+      throwPhaseTime = 0;
+      setOtherArmRotation(ARM_EXTENDED);
+    }
+  }
+}
+
+// ======================================
+// OTHER PLAYER AI AND CAMERA
+// ======================================
+function updateOtherPlayer(dt, now) {
+  if (!otherPlayerStarted || gameEnded) return;
+
+  otherStatus.textContent = 'Active';
+
+  const dx = mainPlayer.position.x - mainOtherPlayer.position.x;
+  const dz = mainPlayer.position.z - mainOtherPlayer.position.z;
+  const distance = Math.hypot(dx, dz);
+
+  if (distance > 7) {
+    const step = Math.min(distance - 7, OTHER_PLAYER_SPEED * dt);
+    mainOtherPlayer.position.x += (dx / distance) * step;
+    mainOtherPlayer.position.z += (dz / distance) * step;
+  }
+
+  mainOtherPlayer.rotation.y = Math.atan2(-dx, -dz);
+
+  const gait = now * 0.013;
+  mainOtherPlayer.userData.legs[0].rotation.x = Math.sin(gait) * 0.55;
+  mainOtherPlayer.userData.legs[1].rotation.x = -Math.sin(gait) * 0.55;
+  mainOtherPlayer.userData.arms[0].rotation.x = -Math.sin(gait) * 0.2;
+
+  // Sync the bot model into the separate inset scene.
+  copyCharacterTransform(mainOtherPlayer, otherViewOtherPlayer);
+
+  updateThrowAnimation(dt, now);
+
+  for (let index = knives.length - 1; index >= 0; index--) {
+    const knife = knives[index];
+    const previousPosition = knife.position.clone();
+
+    knife.position.addScaledVector(knife.velocity, dt);
+    knife.life += dt;
+
+    knife.mainMesh.position.copy(knife.position);
+    knife.otherMesh.position.copy(knife.position);
+    knife.mainMesh.rotateX(dt * 8);
+    knife.otherMesh.rotation.copy(knife.mainMesh.rotation);
+
+    if (knifeHitsDelayedHitbox(previousPosition, knife.position)) {
+      showPow();
+      finishRound();
+    }
+
+    if (knife.life >= KNIFE_LIFETIME) {
+      removeKnifeMeshes(knife);
+      knives.splice(index, 1);
+    }
+  }
+}
+
+function updateOtherCamera() {
+  const facing = new THREE.Vector3(
+    -Math.sin(mainOtherPlayer.rotation.y),
+    0,
+    -Math.cos(mainOtherPlayer.rotation.y)
+  );
+
+  otherCamera.position.set(
+    mainOtherPlayer.position.x + facing.x * 0.35,
+    mainOtherPlayer.position.y + 4.4,
+    mainOtherPlayer.position.z + facing.z * 0.35
+  );
+
+  const target = mainPlayer.position.clone();
+  target.y += 2.8;
+  otherCamera.lookAt(target);
+}
+
+// ======================================
+// MAIN PLAYER MOVEMENT / CAMERA
+// ======================================
+const direction = new THREE.Vector3();
+const forward = new THREE.Vector3();
+const right = new THREE.Vector3();
+const cameraTarget = new THREE.Vector3();
+const lookTarget = new THREE.Vector3();
+
+const PLAYER_SPEED = 9;
+const TURN_SPEED = 18;
+
+function smoothAngle(current, target, amount) {
+  const difference = Math.atan2(
+    Math.sin(target - current),
+    Math.cos(target - current)
+  );
+  return current + difference * amount;
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const now = performance.now();
+
+  forward.set(-Math.sin(cameraYaw), 0, -Math.cos(cameraYaw));
+  right.set(Math.cos(cameraYaw), 0, -Math.sin(cameraYaw));
+
+  direction.set(0, 0, 0);
+  if (keys.KeyW) direction.add(forward);
+  if (keys.KeyS) direction.sub(forward);
+  if (keys.KeyA) direction.sub(right);
+  if (keys.KeyD) direction.add(right);
+
+  if (!gameEnded && direction.lengthSq() > 0) {
+    direction.normalize();
+    mainPlayer.position.addScaledVector(direction, PLAYER_SPEED * dt);
+
+    const desiredRotation = Math.atan2(-direction.x, -direction.z);
+    mainPlayer.rotation.y = smoothAngle(
+      mainPlayer.rotation.y,
+      desiredRotation,
+      1 - Math.exp(-TURN_SPEED * dt)
+    );
+
+    walkTime += dt * 11;
+    mainPlayer.userData.legs[0].rotation.x = Math.sin(walkTime) * 0.65;
+    mainPlayer.userData.legs[1].rotation.x = -Math.sin(walkTime) * 0.65;
+    mainPlayer.userData.arms[0].rotation.x = -Math.sin(walkTime) * 0.45;
+    mainPlayer.userData.arms[1].rotation.x = Math.sin(walkTime) * 0.45;
+  } else {
+    mainPlayer.userData.limbs.forEach(limb => {
+      limb.rotation.x = THREE.MathUtils.damp(limb.rotation.x, 0, 12, dt);
+    });
+  }
+
+  if (!gameEnded) {
+    verticalVelocity -= 22 * dt;
+    mainPlayer.position.y += verticalVelocity * dt;
+
+    if (mainPlayer.position.y <= 0) {
+      mainPlayer.position.y = 0;
+      verticalVelocity = 0;
+      grounded = true;
+    }
+  }
+
+  history.push(saveState(now));
+
+  // Update both POV copies from the same live player and latency history.
+  updateGhost(now);
+  updateOtherPlayer(dt, now);
+
+  while (history.length > 2 && history[1].time < now - 2200) {
+    history.shift();
+  }
+
+  currentZoom = THREE.MathUtils.damp(currentZoom, targetZoom, 10, dt);
+
+  const horizontalDistance = currentZoom * Math.cos(cameraPitch);
+  cameraTarget.set(
+    mainPlayer.position.x + Math.sin(cameraYaw) * horizontalDistance,
+    mainPlayer.position.y + 2.5 + currentZoom * Math.sin(cameraPitch),
+    mainPlayer.position.z + Math.cos(cameraYaw) * horizontalDistance
+  );
+
+  mainCamera.position.lerp(cameraTarget, 1 - Math.exp(-8 * dt));
+  lookTarget.set(mainPlayer.position.x, mainPlayer.position.y + 2.5, mainPlayer.position.z);
+  mainCamera.lookAt(lookTarget);
+
+  updateOtherCamera();
+
+  mainRenderer.render(mainScene, mainCamera);
+
+  const bounds = document.getElementById('botView').getBoundingClientRect();
+  const width = Math.max(1, Math.floor(bounds.width));
+  const height = Math.max(1, Math.floor(bounds.height));
+
+  otherRenderer.setSize(width, height, false);
+  otherCamera.aspect = width / height;
+  otherCamera.updateProjectionMatrix();
+  otherRenderer.render(otherScene, otherCamera);
+}
+
+// ======================================
+// RESET / RESIZE
+// ======================================
+function resetDemo() {
+  mainPlayer.position.set(0, 0, 0);
+  mainPlayer.rotation.set(0, 0, 0);
+  mainGhost.position.set(0, 0, 0);
+  otherViewPlayer.position.set(0, 0, 0);
+  otherViewGhost.position.set(0, 0, 0);
+
+  mainOtherPlayer.position.set(7, 0, 7);
+  otherViewOtherPlayer.position.set(7, 0, 7);
+
+  for (const knife of knives) {
+    removeKnifeMeshes(knife);
+  }
+  knives.length = 0;
+  history.length = 0;
+
+  verticalVelocity = 0;
+  grounded = true;
+  gameEnded = false;
+  otherPlayerStarted = false;
+  lastThrowTime = 0;
+  throwPhase = 'idle';
+  throwPhaseTime = 0;
+
+  setOtherArmRotation(ARM_EXTENDED);
+
+  startOtherButton.disabled = false;
+  startOtherButton.textContent = 'Start other player';
+  otherStatus.textContent = 'Not started';
+  gameOverElement.classList.remove('visible');
+}
+
+document.getElementById('restart').addEventListener('click', resetDemo);
+
+addEventListener('resize', () => {
+  mainCamera.aspect = innerWidth / innerHeight;
+  mainCamera.updateProjectionMatrix();
+  mainRenderer.setSize(innerWidth, innerHeight);
+});
+
+mainOtherPlayer.position.set(7, 0, 7);
+otherViewOtherPlayer.position.set(7, 0, 7);
+setOtherArmRotation(ARM_EXTENDED);
+applyVisualToggles();
+animate();
+</script>
+</body>
+</html>

@@ -1,0 +1,44 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "usernames": {
+      "$username": {
+        ".read": "auth != null",
+        ".write": "auth != null && ((!data.exists() && newData.child('uid').val() == auth.uid) || (data.child('uid').val() == auth.uid && newData.child('uid').val() == auth.uid))",
+        ".validate": "newData.hasChildren(['uid', 'username']) && newData.child('uid').isString() && newData.child('username').isString() && newData.child('username').val().length >= 3 && newData.child('username').val().length <= 20"
+      }
+    },
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        ".write": "auth != null && auth.uid == $uid"
+      }
+    },
+    "leaderboards": {
+      "$game": {
+        "players": {
+          ".read": "auth != null",
+          ".indexOn": [
+            "score"
+          ],
+          "$uid": {
+            ".write": "auth != null && auth.uid == $uid",
+            ".validate": "newData.hasChildren(['uid', 'username', 'score']) && newData.child('uid').isString() && newData.child('uid').val() == auth.uid && newData.child('username').isString() && newData.child('score').isNumber() && newData.child('score').val() >= 0"
+          }
+        }
+      }
+    },
+    "rooms": {
+      "$room": {
+        "players": {
+          ".read": "auth != null",
+          "$uid": {
+            ".write": "auth != null && auth.uid == $uid",
+            ".validate": "newData.hasChildren(['uid', 'username', 'x', 'y', 'z']) && newData.child('uid').val() == auth.uid && newData.child('username').isString() && newData.child('x').isNumber() && newData.child('y').isNumber() && newData.child('z').isNumber()"
+          }
+        }
+      }
+    }
+  }
+}

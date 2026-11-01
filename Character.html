@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Player Hitbox Demo</title>
+<style>
+* { box-sizing: border-box; }
+body {
+margin: 0;
+overflow: hidden;
+font-family: Arial, sans-serif;
+background: #dedede;
+}
+#mainView {
+position: fixed;
+inset: 0;
+width: 100%;
+height: 100%;
+display: block;
+cursor: crosshair;
+}
+#mainView:focus {
+outline: none;
+}
+#hud {
+position: fixed;
+z-index: 5;
+top: 14px;
+left: 14px;
+width: 120px;
+padding: 14px;
+color: #000;
+background: #ffffffdf;
+line-height: 1.65;
+}
+button {
+margin: 5px 4px 0 0;
+padding: 7px 9px;
+border: 1px solid #999;
+border-radius: 4px;
+background: #fff;
+cursor: pointer;
+}
+@media (max-width: 600px) {
+#hud {
+top: 8px;
+left: 8px;
+width: 220px;
+padding: 10px;
+font-size: 13px;
+}
+}
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<canvas id="mainView" tabindex="0"></canvas>
+<div id="hud">
+  <button id="toggleHitbox" type="button">Hide hitbox</button>
+</div>
+<script src="assets/freeform.js"></script>
+<script type="module">
+import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+
+const canvas = document.getElementById('mainView');
+
+// Scene and renderer
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xdedede);
+
+const renderer = new THREE.WebGLRenderer({
+  canvas,
+  antialias: true
+});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.setSize(window.innerWidth, window.innerHeight);
+
+// Lighting
+scene.add(new THREE.HemisphereLight(0xffffff, 0x777777, 2));
+
+const sun = new THREE.DirectionalLight(0xffffff, 2);
+sun.position.set(8, 15, 10);
+sun.castShadow = true;
+scene.add(sun);
+
+// Camera
+const camera = new THREE.PerspectiveCamera(
+  65,
+  window.innerWidth / window.innerHeight,
+  0.1,
+  500
+);
+
+// Player character
+function createCharacter(color) {
+  const root = new THREE.Group();
+  const model = new THREE.Group();
+  root.add(model);
+
+  const avatarColors = window.FreeForm ? FreeForm.getAvatar() : { body: '#3976d2', head: '#f4c95d', legs: '#29343d' };
+  const material = new THREE.MeshStandardMaterial({
+    color: avatarColors.body || color,
+    roughness: 0.9
+  });
+  const headMaterial = new THREE.MeshStandardMaterial({ color: avatarColors.head, roughness: 0.9 });
+  const legMaterial = new THREE.MeshStandardMaterial({ color: avatarColors.legs, roughness: 0.9 });
+
+  function addBox(name, size, position, parent = model) {
+    const mesh = new THREE.Mesh(
+      new RoundedBoxGeometry(size[0], size[1], size[2], 2, 0.05),
+      /Leg/.test(name) ? legMaterial : material
+    );
+    mesh.name = name;
+    mesh.position.set(...position);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    parent.add(mesh);
+    return mesh;
+  }
+
+  const headRadius = 0.6;
+  const headHeight = 1.1;
+  const headBevel = 0.16;
+  const headProfile = [
+    new THREE.Vector2(0, -headHeight / 2),
+    new THREE.Vector2(headRadius - headBevel, -headHeight / 2),
+    new THREE.Vector2(headRadius, -headHeight / 2 + headBevel),
+    new THREE.Vector2(headRadius, headHeight / 2 - headBevel),
+    new THREE.Vector2(headRadius - headBevel, headHeight / 2),
+    new THREE.Vector2(0, headHeight / 2)
+  ];
+
+  const head = new THREE.Mesh(
+    new THREE.LatheGeometry(headProfile, 32),
+    headMaterial
+  );
+  head.position.set(0, 4.5, 0);
+  head.castShadow = true;
+  head.receiveShadow = true;
+  model.add(head);
+  const faceTexture = new THREE.TextureLoader().load('assets/default-face.svg');
+  faceTexture.colorSpace = THREE.SRGBColorSpace;
+  const face = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.72, 0.72),
+    new THREE.MeshBasicMaterial({ map: faceTexture, transparent: true, depthWrite: false })
+  );
+  face.position.set(0, 4.5, -0.585);
+  face.rotation.y = Math.PI;
+  face.renderOrder = 3;
+  model.add(face);
+
+  addBox('Torso', [2, 2, 1], [0, 3, 0]);
+
+  function makeArm(name, x) {
+    const pivot = new THREE.Group();
+    pivot.position.set(x, 4, 0);
+    model.add(pivot);
+    addBox(name, [1, 2, 1], [0, -1, 0], pivot);
+    return pivot;
+  }
+
+  function makeLeg(name, x) {
+    const pivot = new THREE.Group();
+    pivot.position.set(x, 2, 0);
+    model.add(pivot);
+    addBox(name, [1, 2, 1], [0, -1, 0], pivot);
+    return pivot;
+  }
+
+  const arms = [
+    makeArm('Left Arm', -1.5),
+    makeArm('Right Arm', 1.5)
+  ];
+
+  const legs = [
+    makeLeg('Left Leg', -0.5),
+    makeLeg('Right Leg', 0.5)
+  ];
+
+  root.userData.arms = arms;
+  root.userData.legs = legs;
+  root.userData.limbs = [...arms, ...legs];
+
+  return root;
+}
+
+const player = createCharacter(0x888888);
+scene.add(player);
+
+// Player name label
+function createNameLabel(text) {
+  const labelCanvas = document.createElement('canvas');
+  labelCanvas.width = 512;
+  labelCanvas.height = 128;
+
+  const context = labelCanvas.getContext('2d');
+  context.clearRect(0, 0, labelCanvas.width, labelCanvas.height);
+  context.font = 'bold 48px Arial';
+  context.textAlign = 'center';
+  context.textBaseline = 'middle';
+
+  context.lineWidth = 9;
+  context.strokeStyle = 'rgba(0,0,0,0.85)';
+  context.strokeText(text, labelCanvas.width / 2, labelCanvas.height / 2);
+  context.fillStyle = '#ffffff';
+  context.fillText(text, labelCanvas.width / 2, labelCanvas.height / 2);
+
+  const texture = new THREE.CanvasTexture(labelCanvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+
+  const sprite = new THREE.Sprite(
+    new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      depthTest: false
+    })
+  );
+
+  sprite.scale.set(3.5, 0.88, 1);
+  sprite.position.set(0, 6.15, 0);
+  sprite.renderOrder = 10;
+
+  return sprite;
+}
+
+player.add(createNameLabel(window.FreeForm ? (FreeForm.getSession() || 'Guest') : 'Guest'));
+
+// Hitbox follows and rotates with the player.
+const hitbox = new THREE.Mesh(
+  new THREE.BoxGeometry(2.2, 5.6, 1.2),
+  new THREE.MeshBasicMaterial({
+    color: 0xff2020,
+    wireframe: true,
+    transparent: true,
+    opacity: 0.95
+  })
+);
+scene.add(hitbox);
+
+let hitboxVisible = true;
+const hitboxButton = document.getElementById('toggleHitbox');
+
+hitboxButton.addEventListener('click', () => {
+  hitboxVisible = !hitboxVisible;
+  hitbox.visible = hitboxVisible;
+  hitboxButton.textContent = hitboxVisible ? 'Hide hitbox' : 'Show hitbox';
+});
+
+// Pointer lock: click the canvas to lock; press Esc to unlock.
+canvas.addEventListener('click', () => {
+  if (document.pointerLockElement !== canvas) {
+    canvas.requestPointerLock();
+  }
+});
+
+// Player input
+const keys = Object.create(null);
+let verticalVelocity = 0;
+let grounded = true;
+let walkTime = 0;
+
+window.addEventListener('keydown', event => {
+  keys[event.code] = true;
+
+  if (event.code === 'Space') {
+    event.preventDefault();
+
+    if (grounded) {
+      verticalVelocity = 8.5;
+      grounded = false;
+    }
+  }
+});
+
+window.addEventListener('keyup', event => {
+  keys[event.code] = false;
+});
+
+window.addEventListener('blur', () => {
+  for (const key in keys) {
+    keys[key] = false;
+  }
+});
+
+// Camera controls
+let cameraYaw = 0;
+let cameraPitch = 0.18;
+let targetZoom = 9;
+let currentZoom = 9;
+let dragging = false;
+let lastX = 0;
+let lastY = 0;
+
+// When locked, mouse movement rotates the camera.
+// When unlocked, drag on the canvas to rotate the camera.
+document.addEventListener('mousemove', event => {
+  if (document.pointerLockElement === canvas) {
+    cameraYaw -= event.movementX * 0.006;
+    cameraPitch += event.movementY * 0.004;
+    cameraPitch = THREE.MathUtils.clamp(cameraPitch, -1.0, 1.1);
+  }
+});
+
+canvas.addEventListener('pointerdown', event => {
+  if (document.pointerLockElement === canvas) return;
+
+  dragging = true;
+  lastX = event.clientX;
+  lastY = event.clientY;
+  canvas.setPointerCapture(event.pointerId);
+});
+
+canvas.addEventListener('pointerup', () => {
+  dragging = false;
+});
+
+canvas.addEventListener('pointercancel', () => {
+  dragging = false;
+});
+
+canvas.addEventListener('pointermove', event => {
+  if (!dragging || document.pointerLockElement === canvas) return;
+
+  cameraYaw -= (event.clientX - lastX) * 0.006;
+  cameraPitch += (event.clientY - lastY) * 0.004;
+  cameraPitch = THREE.MathUtils.clamp(cameraPitch, -1.0, 1.1);
+
+  lastX = event.clientX;
+  lastY = event.clientY;
+});
+
+canvas.addEventListener('wheel', event => {
+  event.preventDefault();
+  targetZoom += event.deltaY * 0.012;
+  targetZoom = THREE.MathUtils.clamp(targetZoom, 2.5, 22);
+}, { passive: false });
+
+// Movement and animation
+const clock = new THREE.Clock();
+const direction = new THREE.Vector3();
+const forward = new THREE.Vector3();
+const right = new THREE.Vector3();
+const cameraTarget = new THREE.Vector3();
+const lookTarget = new THREE.Vector3();
+
+const PLAYER_SPEED = 9;
+const TURN_SPEED = 18;
+
+function smoothAngle(current, target, amount) {
+  const difference = Math.atan2(
+    Math.sin(target - current),
+    Math.cos(target - current)
+  );
+  return current + difference * amount;
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  const dt = Math.min(clock.getDelta(), 0.05);
+
+  forward.set(-Math.sin(cameraYaw), 0, -Math.cos(cameraYaw));
+  right.set(Math.cos(cameraYaw), 0, -Math.sin(cameraYaw));
+
+  direction.set(0, 0, 0);
+  if (keys.KeyW) direction.add(forward);
+  if (keys.KeyS) direction.sub(forward);
+  if (keys.KeyA) direction.sub(right);
+  if (keys.KeyD) direction.add(right);
+
+  if (direction.lengthSq() > 0) {
+    direction.normalize();
+    player.position.addScaledVector(direction, PLAYER_SPEED * dt);
+
+    const desiredRotation = Math.atan2(-direction.x, -direction.z);
+    player.rotation.y = smoothAngle(
+      player.rotation.y,
+      desiredRotation,
+      1 - Math.exp(-TURN_SPEED * dt)
+    );
+
+    walkTime += dt * 11;
+    player.userData.legs[0].rotation.x = Math.sin(walkTime) * 0.65;
+    player.userData.legs[1].rotation.x = -Math.sin(walkTime) * 0.65;
+    player.userData.arms[0].rotation.x = -Math.sin(walkTime) * 0.45;
+    player.userData.arms[1].rotation.x = Math.sin(walkTime) * 0.45;
+  } else {
+    player.userData.limbs.forEach(limb => {
+      limb.rotation.x = THREE.MathUtils.damp(limb.rotation.x, 0, 12, dt);
+    });
+  }
+
+  // Jumping and gravity
+  verticalVelocity -= 22 * dt;
+  player.position.y += verticalVelocity * dt;
+
+  if (player.position.y <= 0) {
+    player.position.y = 0;
+    verticalVelocity = 0;
+    grounded = true;
+  }
+
+  // Keep the hitbox centered on the player.
+  hitbox.position.set(
+    player.position.x,
+    player.position.y + 2.8,
+    player.position.z
+  );
+  hitbox.rotation.y = player.rotation.y;
+
+  // Follow the player with the camera.
+  currentZoom = THREE.MathUtils.damp(currentZoom, targetZoom, 10, dt);
+
+  const horizontalDistance = currentZoom * Math.cos(cameraPitch);
+  cameraTarget.set(
+    player.position.x + Math.sin(cameraYaw) * horizontalDistance,
+    player.position.y + 2.5 + currentZoom * Math.sin(cameraPitch),
+    player.position.z + Math.cos(cameraYaw) * horizontalDistance
+  );
+
+  camera.position.lerp(cameraTarget, 1 - Math.exp(-8 * dt));
+  lookTarget.set(
+    player.position.x,
+    player.position.y + 2.5,
+    player.position.z
+  );
+  camera.lookAt(lookTarget);
+
+  renderer.render(scene, camera);
+}
+
+// Resize renderer and camera
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+camera.aspect = window.innerWidth / window.innerHeight;
+camera.updateProjectionMatrix();
+
+animate();
+</script>
+</body>
+</html>

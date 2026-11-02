@@ -5,10 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#101713">
   <title>FreeForm In-Game Chat</title>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
   <style>
     :root {
-      --chat-bg: rgba(16, 23, 19, .94);
+      --chat-bg: rgba(16, 23, 19, .96);
       --chat-panel: #18221c;
       --chat-border: rgba(255,255,255,.12);
       --chat-text: #f2f7f3;
@@ -145,6 +146,13 @@
       background: rgba(27,155,82,.25);
     }
 
+    .chat-error {
+      min-height: 14px;
+      padding: 0 10px 6px;
+      color: #ffaaa2;
+      font-size: 10px;
+    }
+
     .chat-compose {
       display: flex;
       align-items: end;
@@ -170,7 +178,6 @@
     }
 
     .chat-input::placeholder { color: #87948b; }
-
     .chat-input:focus { border-color: rgba(57,210,120,.65); }
 
     .chat-send {
@@ -187,11 +194,6 @@
     }
 
     .chat-send:hover { background: #63e596; }
-
-    .chat-send:disabled {
-      cursor: not-allowed;
-      opacity: .45;
-    }
 
     .chat-bubble {
       position: fixed;
@@ -234,13 +236,6 @@
       font-weight: 800;
     }
 
-    .chat-error {
-      min-height: 14px;
-      padding: 0 10px 6px;
-      color: #ffaaa2;
-      font-size: 10px;
-    }
-
     @keyframes message-in {
       from { opacity: 0; transform: translateY(4px); }
       to { opacity: 1; transform: translateY(0); }
@@ -265,11 +260,12 @@
         <i class="fa-solid fa-comments" aria-hidden="true"></i>
         <span>Game chat</span>
       </div>
-      <div class="chat-state" id="chatState" aria-live="polite">
-        <span class="chat-state-dot"></span>
-        <span>Local chat</span>
-      </div>
-    </header>
+  <div class="chat-state" id="chatState" aria-live="polite">
+    <span class="chat-state-dot"></span>
+    <span id="chatStateText">Local chat</span>
+  </div>
+</header>
+
 <div class="chat-messages" id="chatMessages" role="log" aria-live="polite">
   <div class="chat-empty" id="chatEmpty">
     <i class="fa-regular fa-message" aria-hidden="true"></i>
@@ -287,213 +283,223 @@
     rows="1"
     placeholder="Type a message..."
     aria-label="Type a chat message"></textarea>
-  <button class="chat-send" id="chatSend" type="submit" aria-label="Send message">
+
+  <button class="chat-send" type="submit" aria-label="Send message">
     <i class="fa-solid fa-paper-plane" aria-hidden="true"></i>
   </button>
 </form>
 
   </section>
+  <!-- This bubble appears inside the iframe. It can be positioned with the
+       setPlayerScreenPosition message from the parent game page. -->
   <div class="chat-bubble" id="chatBubble" hidden>
     <span class="chat-bubble-name" id="bubbleName"></span>
     <span id="bubbleText"></span>
   </div>
   <script src="assets/freeform.js"></script>
-  <script type="module">
-    const params = new URLSearchParams(location.search);
-    const game = params.get('game') || 'game';
-    const playerName = window.FreeForm?.getSession?.() || 'Guest';
+  <script>
+    (() => {
+      const params = new URLSearchParams(window.location.search);
+      const game = (params.get('game') || 'game').replace(/[^a-z0-9_-]/gi, '').slice(0, 40);
+      const playerName = window.FreeForm?.getSession?.() || 'Guest';
 
-    const chatMessages = document.getElementById('chatMessages');
-    const chatEmpty = document.getElementById('chatEmpty');
-    const chatForm = document.getElementById('chatForm');
-    const chatInput = document.getElementById('chatInput');
-    const chatError = document.getElementById('chatError');
-    const chatBubble = document.getElementById('chatBubble');
-    const bubbleName = document.getElementById('bubbleName');
-    const bubbleText = document.getElementById('bubbleText');
+      const chatMessages = document.getElementById('chatMessages');
+      const chatForm = document.getElementById('chatForm');
+      const chatInput = document.getElementById('chatInput');
+      const chatError = document.getElementById('chatError');
+      const chatBubble = document.getElementById('chatBubble');
+      const bubbleName = document.getElementById('bubbleName');
+      const bubbleText = document.getElementById('bubbleText');
+      const chatStateText = document.getElementById('chatStateText');
 
-    let bubbleTimeout;
-    let unsubscribe = null;
-    let database = null;
-    let chatRef = null;
+      const clientId = window.crypto?.randomUUID
+        ? window.crypto.randomUUID()
+        : String(Date.now()) + Math.random().toString(36).slice(2);
 
-    function showBubble(name, message) {
-      bubbleName.textContent = name;
-      bubbleText.textContent = message;
-      chatBubble.hidden = false;
+      const storageKey = 'freeformChat:' + game;
+      const maxStoredMessages = 60;
+      let bubbleTimeout = null;
+      let bubblePosition = { x: window.innerWidth / 2, y: window.innerHeight * .3 };
 
-      if (typeof window.FreeFormChat?.getPlayerScreenPosition === 'function') {
-        const position = window.FreeFormChat.getPlayerScreenPosition();
-
-        if (position && Number.isFinite(position.x) && Number.isFinite(position.y)) {
-          chatBubble.style.left = position.x + 'px';
-          chatBubble.style.top = position.y + 'px';
-        } else {
-          chatBubble.style.left = '50%';
-          chatBubble.style.top = '30%';
-        }
-      } else {
-        chatBubble.style.left = '50%';
-        chatBubble.style.top = '30%';
+      function updateBubblePosition() {
+        chatBubble.style.left = bubblePosition.x + 'px';
+        chatBubble.style.top = bubblePosition.y + 'px';
       }
 
-      clearTimeout(bubbleTimeout);
-      bubbleTimeout = setTimeout(() => {
-        chatBubble.hidden = true;
-      }, 5000);
-    }
+      function showBubble(name, text) {
+        bubbleName.textContent = name;
+        bubbleText.textContent = text;
+        updateBubblePosition();
+        chatBubble.hidden = false;
 
-    function addMessage(name, text, own = false, time = Date.now()) {
-      const message = String(text || '').trim();
-      if (!message) return;
+        clearTimeout(bubbleTimeout);
+        bubbleTimeout = setTimeout(() => {
+          chatBubble.hidden = true;
+        }, 5000);
+      }
 
-      chatEmpty?.remove();
+      function addMessage(message, isOwn) {
+        const empty = document.getElementById('chatEmpty');
+        if (empty) empty.remove();
 
-      const item = document.createElement('article');
-      item.className = 'chat-message' + (own ? ' own' : '');
+        const item = document.createElement('article');
+        item.className = 'chat-message' + (isOwn ? ' own' : '');
 
-      const meta = document.createElement('div');
-      meta.className = 'message-meta';
+        const meta = document.createElement('div');
+        meta.className = 'message-meta';
 
-      const sender = document.createElement('span');
-      sender.className = 'message-name';
-      sender.textContent = name || 'Guest';
+        const sender = document.createElement('span');
+        sender.className = 'message-name';
+        sender.textContent = message.name || 'Guest';
 
-      const clock = document.createElement('time');
-      const date = new Date(time);
-      clock.dateTime = date.toISOString();
-      clock.textContent = date.toLocaleTimeString([], {
-        hour: 'numeric',
-        minute: '2-digit'
-      });
-
-      meta.append(sender, clock);
-
-      const bubble = document.createElement('div');
-      bubble.className = 'message-bubble';
-      bubble.textContent = message;
-
-      item.append(meta, bubble);
-      chatMessages.appendChild(item);
-      chatMessages.scrollTop = chatMessages.scrollHeight;
-
-      if (own) showBubble(name || 'Guest', message);
-    }
-
-    function setConnectionLabel(label) {
-      document.querySelector('#chatState span:last-child').textContent = label;
-    }
-
-    async function startFirebaseChat() {
-      try {
-        const firebaseModule = await import('./assets/firebase-cloud.js');
-
-        /*
-          Optional integration contract:
-          Export getChatDatabase() from firebase-cloud.js, returning the
-          initialized Firebase Realtime Database instance.
-
-          If the export is unavailable, the chat remains usable locally.
-        */
-        if (typeof firebaseModule.getChatDatabase !== 'function') {
-          setConnectionLabel('Local chat');
-          return;
-        }
-
-        const { get, getDatabase, limitToLast, onChildAdded, orderByChild, push, query, ref, serverTimestamp, set } =
-          await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js');
-
-        database = firebaseModule.getChatDatabase() || getDatabase();
-        chatRef = ref(database, 'gameChats/' + game);
-        const recentMessages = query(chatRef, orderByChild('createdAt'), limitToLast(60));
-
-        unsubscribe = onChildAdded(recentMessages, snapshot => {
-          const data = snapshot.val();
-          if (!data || !data.text) return;
-
-          addMessage(
-            data.name || 'Guest',
-            data.text,
-            data.name === playerName && data.clientId === clientId,
-            data.createdAt || Date.now()
-          );
+        const time = document.createElement('time');
+        const date = new Date(message.time || Date.now());
+        time.dateTime = date.toISOString();
+        time.textContent = date.toLocaleTimeString([], {
+          hour: 'numeric',
+          minute: '2-digit'
         });
 
-        window.FreeFormChat = window.FreeFormChat || {};
-        window.FreeFormChat.send = async text => {
-          const newMessage = push(chatRef);
-          await set(newMessage, {
-            name: playerName,
-            text: String(text).slice(0, 180),
-            clientId,
-            createdAt: serverTimestamp()
+        meta.append(sender, time);
+
+        const content = document.createElement('div');
+        content.className = 'message-bubble';
+        content.textContent = message.text;
+
+        item.append(meta, content);
+        chatMessages.appendChild(item);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+
+        if (isOwn) showBubble(message.name || 'Guest', message.text);
+      }
+
+      function loadMessages() {
+        try {
+          const saved = JSON.parse(localStorage.getItem(storageKey) || '[]');
+          if (!Array.isArray(saved)) return;
+
+          saved.slice(-maxStoredMessages).forEach(message => {
+            if (message && typeof message.text === 'string') {
+              addMessage(message, message.clientId === clientId);
+            }
           });
+        } catch (error) {
+          console.warn('Could not load saved chat messages.', error);
+        }
+      }
+
+      function saveMessage(text) {
+        const message = {
+          name: playerName,
+          text: text.slice(0, 180),
+          time: Date.now(),
+          clientId
         };
 
-        setConnectionLabel('Connected');
-      } catch (error) {
-        console.info('Firebase chat is not configured; using local chat.', error);
-        setConnectionLabel('Local chat');
-      }
-    }
-
-    const clientId = (crypto.randomUUID?.() || String(Date.now()) + Math.random());
-
-    chatForm.addEventListener('submit', async event => {
-      event.preventDefault();
-      const text = chatInput.value.trim();
-
-      if (!text) return;
-
-      chatError.textContent = '';
-
-      if (typeof window.FreeFormChat?.send === 'function') {
+        let messages = [];
         try {
-          await window.FreeFormChat.send(text);
-        } catch (error) {
-          chatError.textContent = 'Message could not be sent. Check your connection.';
-          return;
+          messages = JSON.parse(localStorage.getItem(storageKey) || '[]');
+          if (!Array.isArray(messages)) messages = [];
+        } catch {
+          messages = [];
         }
-      } else {
-        addMessage(playerName, text, true);
+
+        messages.push(message);
+        messages = messages.slice(-maxStoredMessages);
+        localStorage.setItem(storageKey, JSON.stringify(messages));
+        addMessage(message, true);
       }
 
-      chatInput.value = '';
-      chatInput.style.height = '36px';
-      chatInput.focus();
-    });
-
-    chatInput.addEventListener('keydown', event => {
-      if (event.key === 'Enter' && !event.shiftKey) {
+      chatForm.addEventListener('submit', event => {
         event.preventDefault();
-        chatForm.requestSubmit();
-      }
-    });
 
-    chatInput.addEventListener('input', () => {
-      chatInput.style.height = '36px';
-      chatInput.style.height = Math.min(chatInput.scrollHeight, 88) + 'px';
-    });
+        const text = chatInput.value.trim();
+        if (!text) return;
 
-    /*
-      Game integration:
-      Call this from a game after updating the player's projected screen point:
-      window.FreeFormChat.setPlayerScreenPosition(x, y);
+        chatError.textContent = '';
 
-      x/y are viewport pixels marking the top of the character.
-    */
-    window.FreeFormChat = window.FreeFormChat || {};
-    window.FreeFormChat.setPlayerScreenPosition = (x, y) => {
-      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-      chatBubble.style.left = x + 'px';
-      chatBubble.style.top = y + 'px';
-    };
+        try {
+          saveMessage(text);
+          chatInput.value = '';
+          chatInput.style.height = '36px';
+          chatInput.focus();
+        } catch (error) {
+          console.error('Could not save chat message.', error);
+          chatError.textContent = 'Could not save the message in this browser.';
+        }
+      });
 
-    window.addEventListener('beforeunload', () => {
-      if (typeof unsubscribe === 'function') unsubscribe();
-    });
+      chatInput.addEventListener('keydown', event => {
+        if (event.key === 'Enter' && !event.shiftKey) {
+          event.preventDefault();
+          chatForm.requestSubmit();
+        }
+      });
 
-    startFirebaseChat();
+      chatInput.addEventListener('input', () => {
+        chatInput.style.height = '36px';
+        chatInput.style.height = Math.min(chatInput.scrollHeight, 88) + 'px';
+      });
+
+      /*
+        The parent game page can position this bubble by sending:
+        iframe.contentWindow.postMessage(
+          { type: 'freeform-chat-position', x: 400, y: 180 },
+          location.origin
+        );
+      */
+      window.addEventListener('message', event => {
+        if (event.origin !== window.location.origin) return;
+
+        const data = event.data;
+        if (!data || data.type !== 'freeform-chat-position') return;
+        if (!Number.isFinite(data.x) || !Number.isFinite(data.y)) return;
+
+        bubblePosition = { x: data.x, y: data.y };
+        updateBubblePosition();
+      });
+
+      /*
+        Local storage events let other same-origin tabs show new messages.
+        This is not a live multiplayer replacement for Firebase.
+      */
+      window.addEventListener('storage', event => {
+        if (event.key !== storageKey || !event.newValue) return;
+
+        try {
+          const messages = JSON.parse(event.newValue);
+          if (!Array.isArray(messages) || messages.length === 0) return;
+
+          const latest = messages[messages.length - 1];
+          if (latest.clientId !== clientId) addMessage(latest, false);
+        } catch (error) {
+          console.warn('Could not read updated chat messages.', error);
+        }
+      });
+
+      window.addEventListener('resize', () => {
+        if (bubblePosition.x === 0 || bubblePosition.y === 0) {
+          bubblePosition = {
+            x: window.innerWidth / 2,
+            y: window.innerHeight * .3
+          };
+          updateBubblePosition();
+        }
+      });
+
+      window.FreeFormChat = {
+        game,
+        showBubble,
+        setPlayerScreenPosition(x, y) {
+          if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+          bubblePosition = { x, y };
+          updateBubblePosition();
+        }
+      };
+
+      loadMessages();
+      chatStateText.textContent = 'Local chat';
+    })();
   </script>
 </body>
 </html>

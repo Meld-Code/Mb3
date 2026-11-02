@@ -9,12 +9,12 @@
         href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
   <style>
     :root {
-      --chat-bg: rgba(16, 23, 19, .96);
-      --chat-panel: #18221c;
-      --chat-border: rgba(255,255,255,.12);
-      --chat-text: #f2f7f3;
-      --chat-muted: #a6b2a9;
-      --chat-green: #39d278;
+      --green: #39d278;
+      --green-dark: #168746;
+      --panel: rgba(16, 23, 19, .97);
+      --line: rgba(255,255,255,.13);
+      --text: #f2f7f3;
+      --muted: #a6b2a9;
     }
 
     * { box-sizing: border-box; }
@@ -25,20 +25,20 @@
       margin: 0;
       overflow: hidden;
       background: transparent;
-      color: var(--chat-text);
+      color: var(--text);
       font-family: Arial, Helvetica, sans-serif;
     }
 
-    .chat-widget {
+    .chat-shell {
       width: 100%;
       height: 100%;
       display: flex;
       flex-direction: column;
       overflow: hidden;
-      border: 1px solid var(--chat-border);
+      border: 1px solid var(--line);
       border-radius: 12px;
-      background: var(--chat-bg);
-      box-shadow: 0 10px 35px rgba(0,0,0,.3);
+      background: var(--panel);
+      box-shadow: 0 10px 35px rgba(0,0,0,.35);
       backdrop-filter: blur(10px);
     }
 
@@ -47,13 +47,12 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 10px;
-      padding: 0 12px;
-      border-bottom: 1px solid var(--chat-border);
-      background: rgba(255,255,255,.025);
+      gap: 8px;
+      padding: 0 11px;
+      border-bottom: 1px solid var(--line);
     }
 
-    .chat-heading {
+    .chat-title {
       display: flex;
       align-items: center;
       gap: 8px;
@@ -61,104 +60,106 @@
       font-weight: 700;
     }
 
-    .chat-heading i { color: var(--chat-green); }
+    .chat-title i { color: var(--green); }
 
-    .chat-state {
+    .chat-status {
       display: flex;
       align-items: center;
       gap: 6px;
-      color: var(--chat-muted);
+      color: var(--muted);
       font-size: 10px;
     }
 
-    .chat-state-dot {
+    .status-dot {
       width: 7px;
       height: 7px;
       border-radius: 50%;
-      background: var(--chat-green);
+      background: #e6b84f;
     }
 
-    .chat-messages {
+    .status-dot.online { background: var(--green); }
+    .status-dot.error { background: #ff7066; }
+
+    .messages {
       flex: 1;
       min-height: 0;
       display: flex;
       flex-direction: column;
       gap: 9px;
       overflow-y: auto;
-      padding: 11px;
+      padding: 10px;
       scrollbar-color: #44574a transparent;
       scrollbar-width: thin;
     }
 
-    .chat-empty {
+    .empty {
       margin: auto;
-      color: var(--chat-muted);
+      color: var(--muted);
       font-size: 12px;
       line-height: 1.5;
       text-align: center;
     }
 
-    .chat-empty i {
+    .empty i {
       display: block;
       margin-bottom: 8px;
       color: #748279;
       font-size: 22px;
     }
 
-    .chat-message {
+    .message {
       max-width: 95%;
       align-self: flex-start;
-      animation: message-in .15s ease-out;
     }
 
-    .chat-message.own { align-self: flex-end; }
+    .message.own { align-self: flex-end; }
 
     .message-meta {
       display: flex;
       gap: 6px;
       margin: 0 4px 4px;
-      color: var(--chat-muted);
+      color: var(--muted);
       font-size: 10px;
     }
 
-    .chat-message.own .message-meta { justify-content: flex-end; }
+    .message.own .message-meta { justify-content: flex-end; }
 
     .message-name {
       color: #c8f2d6;
       font-weight: 700;
     }
 
-    .message-bubble {
+    .message-text {
       padding: 8px 10px;
-      border: 1px solid var(--chat-border);
+      border: 1px solid var(--line);
       border-radius: 10px 10px 10px 3px;
-      background: var(--chat-panel);
-      color: var(--chat-text);
+      background: #18221c;
+      color: var(--text);
       font-size: 12px;
       line-height: 1.4;
       overflow-wrap: anywhere;
       white-space: pre-wrap;
     }
 
-    .chat-message.own .message-bubble {
+    .message.own .message-text {
       border-color: rgba(57,210,120,.25);
       border-radius: 10px 10px 3px 10px;
       background: rgba(27,155,82,.25);
     }
 
     .chat-error {
-      min-height: 14px;
-      padding: 0 10px 6px;
+      min-height: 16px;
+      padding: 0 10px 4px;
       color: #ffaaa2;
       font-size: 10px;
     }
 
-    .chat-compose {
+    .chat-form {
       display: flex;
       align-items: end;
       gap: 7px;
       padding: 9px;
-      border-top: 1px solid var(--chat-border);
+      border-top: 1px solid var(--line);
     }
 
     .chat-input {
@@ -167,11 +168,11 @@
       max-height: 88px;
       resize: none;
       padding: 9px 10px;
-      border: 1px solid var(--chat-border);
+      border: 1px solid var(--line);
       border-radius: 8px;
       outline: none;
       background: rgba(0,0,0,.2);
-      color: var(--chat-text);
+      color: var(--text);
       font: inherit;
       font-size: 12px;
       line-height: 1.4;
@@ -180,7 +181,7 @@
     .chat-input::placeholder { color: #87948b; }
     .chat-input:focus { border-color: rgba(57,210,120,.65); }
 
-    .chat-send {
+    .send-button {
       width: 37px;
       height: 36px;
       flex: 0 0 auto;
@@ -188,48 +189,46 @@
       place-items: center;
       border: 0;
       border-radius: 8px;
-      background: var(--chat-green);
+      background: var(--green);
       color: #102016;
       cursor: pointer;
     }
 
-    .chat-send:hover { background: #63e596; }
-
-    @keyframes message-in {
-      from { opacity: 0; transform: translateY(4px); }
-      to { opacity: 1; transform: translateY(0); }
+    .send-button:disabled {
+      cursor: not-allowed;
+      opacity: .45;
     }
 
     @media (max-width: 520px) {
       .chat-header { min-height: 38px; }
-      .chat-messages { padding: 8px; }
-      .chat-compose { padding: 7px; }
+      .messages { padding: 8px; }
+      .chat-form { padding: 7px; }
     }
   </style>
 </head>
 <body>
-  <section class="chat-widget" aria-label="In-game chat">
+  <section class="chat-shell" aria-label="In-game chat">
     <header class="chat-header">
-      <div class="chat-heading">
+      <div class="chat-title">
         <i class="fa-solid fa-comments" aria-hidden="true"></i>
         <span>Game chat</span>
       </div>
-  <div class="chat-state" aria-live="polite">
-    <span class="chat-state-dot"></span>
-    <span id="chatStateText">Local chat</span>
+  <div class="chat-status" aria-live="polite">
+    <span class="status-dot" id="statusDot"></span>
+    <span id="statusText">Connecting…</span>
   </div>
 </header>
 
-<div class="chat-messages" id="chatMessages" role="log" aria-live="polite">
-  <div class="chat-empty" id="chatEmpty">
+<div class="messages" id="messages" role="log" aria-live="polite">
+  <div class="empty" id="emptyState">
     <i class="fa-regular fa-message" aria-hidden="true"></i>
-    Messages you send will appear here.
+    Join the room and send the first message.
   </div>
 </div>
 
 <div class="chat-error" id="chatError" aria-live="polite"></div>
 
-<form class="chat-compose" id="chatForm">
+<form class="chat-form" id="chatForm">
   <textarea
     class="chat-input"
     id="chatInput"
@@ -238,159 +237,261 @@
     placeholder="Type a message..."
     aria-label="Type a chat message"></textarea>
 
-  <button class="chat-send" type="submit" aria-label="Send message">
+  <button class="send-button" id="sendButton" type="submit" aria-label="Send message">
     <i class="fa-solid fa-paper-plane" aria-hidden="true"></i>
   </button>
 </form>
 
   </section>
   <script src="assets/freeform.js"></script>
-  <script>
-    (() => {
-      const params = new URLSearchParams(window.location.search);
-      const game = (params.get('game') || 'game')
-        .replace(/[^a-z0-9_-]/gi, '')
-        .slice(0, 40);
+  <script type="module">
+    import { initializeApp, getApp, getApps } from
+      'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+    import { getAuth, onAuthStateChanged } from
+      'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+    import {
+      getDatabase,
+      ref,
+      push,
+      set,
+      query,
+      orderByChild,
+      limitToLast,
+      onChildAdded,
+      serverTimestamp
+    } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
 
-      const playerName = window.FreeForm?.getSession?.() || 'Guest';
-      const clientId = window.crypto?.randomUUID
-        ? window.crypto.randomUUID()
-        : String(Date.now()) + Math.random().toString(36).slice(2);
+    /*
+      Paste the same Firebase WEB APP config used by your project here.
+      Do not paste a service-account key or admin private key.
+    */
+    const firebaseConfig = {
+      apiKey: 'PASTE_YOUR_FIREBASE_WEB_API_KEY',
+      authDomain: 'freeform-4f8df.firebaseapp.com',
+      databaseURL: 'https://freeform-4f8df-default-rtdb.firebaseio.com',
+      projectId: 'freeform-4f8df',
+      storageBucket: 'freeform-4f8df.firebasestorage.app',
+      messagingSenderId: 'PASTE_YOUR_MESSAGING_SENDER_ID',
+      appId: 'PASTE_YOUR_FIREBASE_APP_ID'
+    };
 
-      const storageKey = 'freeformChat:' + game;
-      const maxStoredMessages = 60;
+    const params = new URLSearchParams(location.search);
+    const room = (params.get('game') || 'game')
+      .replace(/[^a-zA-Z0-9_-]/g, '')
+      .slice(0, 40);
 
-      const chatMessages = document.getElementById('chatMessages');
-      const chatForm = document.getElementById('chatForm');
-      const chatInput = document.getElementById('chatInput');
-      const chatError = document.getElementById('chatError');
+    const messagesElement = document.getElementById('messages');
+    const form = document.getElementById('chatForm');
+    const input = document.getElementById('chatInput');
+    const sendButton = document.getElementById('sendButton');
+    const errorElement = document.getElementById('chatError');
+    const statusText = document.getElementById('statusText');
+    const statusDot = document.getElementById('statusDot');
 
-      function renderMessage(message, own) {
-        const empty = document.getElementById('chatEmpty');
-        if (empty) empty.remove();
+    const clientId = crypto.randomUUID
+      ? crypto.randomUUID()
+      : String(Date.now()) + Math.random().toString(36).slice(2);
 
-        const item = document.createElement('article');
-        item.className = 'chat-message' + (own ? ' own' : '');
+    let auth;
+    let database;
+    let currentUser = null;
+    let currentUsername = 'Guest';
+    let stopListening = null;
+    const seenMessageIds = new Set();
 
-        const meta = document.createElement('div');
-        meta.className = 'message-meta';
+    function setStatus(text, state = '') {
+      statusText.textContent = text;
+      statusDot.className = 'status-dot' + (state ? ' ' + state : '');
+    }
 
-        const name = document.createElement('span');
-        name.className = 'message-name';
-        name.textContent = message.name || 'Guest';
+    function showError(text) {
+      errorElement.textContent = text || '';
+    }
 
-        const time = document.createElement('time');
-        const date = new Date(message.time || Date.now());
-        time.dateTime = date.toISOString();
-        time.textContent = date.toLocaleTimeString([], {
-          hour: 'numeric',
-          minute: '2-digit'
+    function getUsernameFromProfile(profile) {
+      if (typeof profile === 'string') return profile;
+      if (profile && typeof profile.username === 'string') return profile.username;
+      if (profile && typeof profile.displayName === 'string') return profile.displayName;
+      return currentUser?.displayName || 'Player';
+    }
+
+    async function resolveUsername(user) {
+      try {
+        const nameKey = 'freeformUsername';
+        const stored = localStorage.getItem(nameKey);
+        if (stored && stored.trim()) return stored.trim().slice(0, 20);
+      } catch {}
+
+      return (user.displayName || 'Player').slice(0, 20);
+    }
+
+    function addMessage(id, data) {
+      if (!data || typeof data.text !== 'string' || seenMessageIds.has(id)) return;
+
+      seenMessageIds.add(id);
+      document.getElementById('emptyState')?.remove();
+
+      const own = data.uid === currentUser?.uid;
+      const article = document.createElement('article');
+      article.className = 'message' + (own ? ' own' : '');
+
+      const meta = document.createElement('div');
+      meta.className = 'message-meta';
+
+      const name = document.createElement('span');
+      name.className = 'message-name';
+      name.textContent = data.username || 'Player';
+
+      const time = document.createElement('time');
+      const timestamp = typeof data.createdAt === 'number' ? data.createdAt : Date.now();
+      const date = new Date(timestamp);
+      time.dateTime = date.toISOString();
+      time.textContent = date.toLocaleTimeString([], {
+        hour: 'numeric',
+        minute: '2-digit'
+      });
+
+      const messageText = document.createElement('div');
+      messageText.className = 'message-text';
+      messageText.textContent = data.text.slice(0, 180);
+
+      meta.append(name, time);
+      article.append(meta, messageText);
+      messagesElement.appendChild(article);
+      messagesElement.scrollTop = messagesElement.scrollHeight;
+
+      // Tell the game page to display the message over that sender's character.
+      window.parent.postMessage({
+        type: 'freeform-chat-message',
+        messageId: id,
+        uid: data.uid,
+        name: data.username || 'Player',
+        text: data.text.slice(0, 180)
+      }, location.origin);
+    }
+
+    async function startRoomListener() {
+      if (!currentUser || !database) return;
+
+      if (typeof stopListening === 'function') {
+        stopListening();
+        stopListening = null;
+      }
+
+      const roomQuery = query(
+        ref(database, 'gameChats/' + room),
+        orderByChild('createdAt'),
+        limitToLast(60)
+      );
+
+      stopListening = onChildAdded(roomQuery, snapshot => {
+        addMessage(snapshot.key, snapshot.val());
+      });
+
+      setStatus('Connected', 'online');
+    }
+
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+
+      const text = input.value.trim().slice(0, 180);
+      if (!text) return;
+
+      if (!currentUser || !database) {
+        showError('Sign in to Firebase to send messages to other players.');
+        return;
+      }
+
+      sendButton.disabled = true;
+      showError('');
+
+      try {
+        const messageRef = push(ref(database, 'gameChats/' + room));
+
+        await set(messageRef, {
+          uid: currentUser.uid,
+          username: currentUsername,
+          text,
+          createdAt: Date.now(),
+          serverTimestamp: serverTimestamp(),
+          clientId
         });
 
-        meta.append(name, time);
-
-        const text = document.createElement('div');
-        text.className = 'message-bubble';
-        text.textContent = message.text;
-
-        item.append(meta, text);
-        chatMessages.appendChild(item);
-        chatMessages.scrollTop = chatMessages.scrollHeight;
+        input.value = '';
+        input.style.height = '36px';
+        input.focus();
+      } catch (error) {
+        console.error('Chat send failed:', error);
+        showError('Message could not be sent. Check your Firebase rules and sign-in.');
+      } finally {
+        sendButton.disabled = false;
       }
+    });
 
-      function readStoredMessages() {
-        try {
-          const messages = JSON.parse(localStorage.getItem(storageKey) || '[]');
-          return Array.isArray(messages) ? messages : [];
-        } catch {
-          return [];
-        }
-      }
-
-      function sendMessage(text) {
-        const message = {
-          name: playerName,
-          text: text.slice(0, 180),
-          time: Date.now(),
-          clientId
-        };
-
-        const messages = readStoredMessages();
-        messages.push(message);
-
-        try {
-          localStorage.setItem(
-            storageKey,
-            JSON.stringify(messages.slice(-maxStoredMessages))
-          );
-        } catch (error) {
-          console.warn('Chat message could not be saved locally.', error);
-        }
-
-        renderMessage(message, true);
-
-        /*
-          Tell the parent game page to show the character speech bubble.
-          The game page must listen for this exact message type.
-        */
-        window.parent.postMessage({
-          type: 'freeform-chat-message',
-          name: playerName,
-          text: message.text
-        }, window.location.origin);
-      }
-
-      readStoredMessages()
-        .slice(-maxStoredMessages)
-        .forEach(message => renderMessage(message, message.clientId === clientId));
-
-      chatForm.addEventListener('submit', event => {
+    input.addEventListener('keydown', event => {
+      if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault();
+        form.requestSubmit();
+      }
+    });
 
-        const text = chatInput.value.trim();
-        if (!text) return;
+    input.addEventListener('input', () => {
+      input.style.height = '36px';
+      input.style.height = Math.min(input.scrollHeight, 88) + 'px';
+    });
 
-        chatError.textContent = '';
-
-        try {
-          sendMessage(text);
-          chatInput.value = '';
-          chatInput.style.height = '36px';
-          chatInput.focus();
-        } catch (error) {
-          console.error('Could not send chat message.', error);
-          chatError.textContent = 'Message could not be sent.';
+    async function initializeChat() {
+      try {
+        if (
+          !firebaseConfig.apiKey ||
+          firebaseConfig.apiKey.startsWith('PASTE_') ||
+          !firebaseConfig.appId ||
+          firebaseConfig.appId.startsWith('PASTE_')
+        ) {
+          setStatus('Firebase config needed', 'error');
+          showError('Add your Firebase web app config in chat.html before using shared chat.');
+          sendButton.disabled = true;
+          return;
         }
-      });
 
-      chatInput.addEventListener('keydown', event => {
-        if (event.key === 'Enter' && !event.shiftKey) {
-          event.preventDefault();
-          chatForm.requestSubmit();
-        }
-      });
+        const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+        auth = getAuth(app);
+        database = getDatabase(app);
 
-      chatInput.addEventListener('input', () => {
-        chatInput.style.height = '36px';
-        chatInput.style.height = Math.min(chatInput.scrollHeight, 88) + 'px';
-      });
+        onAuthStateChanged(auth, async user => {
+          currentUser = user;
 
-      window.addEventListener('storage', event => {
-        if (event.key !== storageKey || !event.newValue) return;
+          if (!user) {
+            currentUsername = 'Guest';
+            setStatus('Sign in required', 'error');
+            showError('Sign in to FreeForm to read and send shared chat messages.');
+            sendButton.disabled = true;
 
-        try {
-          const messages = JSON.parse(event.newValue);
-          if (!Array.isArray(messages)) return;
+            if (typeof stopListening === 'function') {
+              stopListening();
+              stopListening = null;
+            }
+            return;
+          }
 
-          const latest = messages[messages.length - 1];
-          if (!latest || latest.clientId === clientId) return;
+          currentUsername = await resolveUsername(user);
+          showError('');
+          sendButton.disabled = false;
+          await startRoomListener();
+        });
+      } catch (error) {
+        console.error('Firebase chat initialization failed:', error);
+        setStatus('Connection error', 'error');
+        showError('Could not connect to Firebase. Check the web config and database URL.');
+        sendButton.disabled = true;
+      }
+    }
 
-          renderMessage(latest, false);
-        } catch (error) {
-          console.warn('Could not read updated chat messages.', error);
-        }
-      });
-    })();
+    window.addEventListener('beforeunload', () => {
+      if (typeof stopListening === 'function') stopListening();
+    });
+
+    initializeChat();
   </script>
 </body>
 </html>

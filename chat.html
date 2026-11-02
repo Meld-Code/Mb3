@@ -106,7 +106,11 @@
       font-size: 22px;
     }
 
-    .message { max-width: 95%; align-self: flex-start; }
+    .message {
+      max-width: 95%;
+      align-self: flex-start;
+    }
+
     .message.own { align-self: flex-end; }
 
     .message-meta {
@@ -118,7 +122,11 @@
     }
 
     .message.own .message-meta { justify-content: flex-end; }
-    .message-name { color: #c8f2d6; font-weight: 700; }
+
+    .message-name {
+      color: #c8f2d6;
+      font-weight: 700;
+    }
 
     .message-text {
       padding: 8px 10px;
@@ -187,6 +195,32 @@
 
     .send-button:disabled { cursor: not-allowed; opacity: .45; }
 
+    .chat-closed {
+      width: 100%;
+      height: 100%;
+      display: none;
+      place-items: center;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--panel);
+    }
+
+    .chat-closed button {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      border: 0;
+      border-radius: 8px;
+      background: var(--green);
+      color: #102016;
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    body.is-closed .chat-shell { display: none; }
+    body.is-closed .chat-closed { display: grid; }
+
     @media (max-width: 520px) {
       .chat-header { min-height: 38px; }
       .messages { padding: 8px; }
@@ -205,6 +239,11 @@
     <span class="status-dot" id="statusDot"></span>
     <span id="statusText">Connecting…</span>
   </div>
+
+  <button id="closeChat" type="button" aria-label="Close chat"
+          style="border:0;background:transparent;color:#fff;cursor:pointer;padding:6px">
+    <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+  </button>
 </header>
 
 <div class="messages" id="messages" role="log" aria-live="polite">
@@ -217,20 +256,31 @@
 <div class="chat-error" id="chatError" aria-live="polite"></div>
 
 <form class="chat-form" id="chatForm">
-  <textarea
-    class="chat-input"
-    id="chatInput"
-    maxlength="180"
-    rows="1"
-    placeholder="Type a message..."
-    aria-label="Type a chat message"></textarea>
-
+  <textarea class="chat-input" id="chatInput" maxlength="180" rows="1"
+            placeholder="Type a message..." aria-label="Type a chat message"></textarea>
   <button class="send-button" id="sendButton" type="submit" aria-label="Send message">
     <i class="fa-solid fa-paper-plane" aria-hidden="true"></i>
   </button>
 </form>
 
   </section>
+  <div class="chat-closed">
+    <button id="openChat" type="button">
+      <i class="fa-solid fa-comments" aria-hidden="true"></i>
+      Chat
+    </button>
+  </div>
+  <script>
+    document.getElementById('closeChat').addEventListener('click', () => {
+      document.body.classList.add('is-closed');
+      window.parent.postMessage({ type: 'freeform-chat-closed' }, location.origin);
+    });
+
+    document.getElementById('openChat').addEventListener('click', () => {
+      document.body.classList.remove('is-closed');
+      window.parent.postMessage({ type: 'freeform-chat-opened' }, location.origin);
+    });
+  </script>
   <script type="module">
     import { initializeApp, getApps } from
       'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
@@ -247,19 +297,15 @@
       onChildAdded
     } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
 
-    /*
-      Replace these three placeholder values with the matching values
-      from Firebase Console > Project settings > General > Your apps > Config.
-      Do not use a service-account key here.
-    */
     const firebaseConfig = {
-      apiKey: 'REPLACE_WITH_WEB_API_KEY',
+      apiKey: 'AIzaSyAMBBUEHWeeZNhlRVVHTfwfky0vlMFdTlk',
       authDomain: 'freeform-4f8df.firebaseapp.com',
       databaseURL: 'https://freeform-4f8df-default-rtdb.firebaseio.com',
       projectId: 'freeform-4f8df',
       storageBucket: 'freeform-4f8df.firebasestorage.app',
-      messagingSenderId: 'REPLACE_WITH_MESSAGING_SENDER_ID',
-      appId: 'REPLACE_WITH_WEB_APP_ID'
+      messagingSenderId: '591893852633',
+      appId: '1:591893852633:web:f7a79fbe4d4cc89834e9c8',
+      measurementId: 'G-GTE4S0JSMX'
     };
 
     const room = (new URLSearchParams(location.search).get('game') || 'game')
@@ -274,11 +320,11 @@
     const statusText = document.getElementById('statusText');
     const statusDot = document.getElementById('statusDot');
 
-    let auth;
     let database;
     let currentUser = null;
     let currentUsername = 'Player';
     let stopListening = null;
+    const seenMessageIds = new Set();
 
     function setStatus(text, state = '') {
       statusText.textContent = text;
@@ -286,7 +332,8 @@
     }
 
     function addMessage(id, data) {
-      if (!data || typeof data.text !== 'string') return;
+      if (!data || typeof data.text !== 'string' || seenMessageIds.has(id)) return;
+      seenMessageIds.add(id);
 
       document.getElementById('emptyState')?.remove();
 
@@ -302,9 +349,7 @@
       name.textContent = data.username || 'Player';
 
       const time = document.createElement('time');
-      const date = new Date(
-        typeof data.createdAt === 'number' ? data.createdAt : Date.now()
-      );
+      const date = new Date(Number(data.createdAt) || Date.now());
       time.dateTime = date.toISOString();
       time.textContent = date.toLocaleTimeString([], {
         hour: 'numeric',
@@ -320,21 +365,21 @@
       messagesElement.appendChild(article);
       messagesElement.scrollTop = messagesElement.scrollHeight;
 
-      window.parent.postMessage({
-        type: 'freeform-chat-message',
-        messageId: id,
-        uid: data.uid,
-        name: data.username || 'Player',
-        text: data.text.slice(0, 180)
-      }, location.origin);
+      if (window.parent !== window) {
+        window.parent.postMessage({
+          type: 'freeform-chat-message',
+          messageId: id,
+          uid: data.uid,
+          name: data.username || 'Player',
+          text: data.text.slice(0, 180)
+        }, location.origin);
+      }
     }
 
     function startRoomListener() {
       if (!currentUser || !database) return;
 
-      if (typeof stopListening === 'function') {
-        stopListening();
-      }
+      if (typeof stopListening === 'function') stopListening();
 
       const roomMessages = query(
         ref(database, 'gameChats/' + room),
@@ -377,7 +422,7 @@
         input.style.height = '36px';
         input.focus();
       } catch (error) {
-        console.error('Chat message failed to send:', error);
+        console.error('Chat message failed:', error);
         errorElement.textContent =
           'Message failed. Check Firebase sign-in and Realtime Database rules.';
       } finally {
@@ -397,68 +442,54 @@
       input.style.height = Math.min(input.scrollHeight, 88) + 'px';
     });
 
-    async function startChat() {
-      const hasPlaceholders =
-        firebaseConfig.apiKey.startsWith('REPLACE_') ||
-        firebaseConfig.messagingSenderId.startsWith('REPLACE_') ||
-        firebaseConfig.appId.startsWith('REPLACE_');
+    try {
+      const app = getApps().length
+        ? getApps()[0]
+        : initializeApp(firebaseConfig);
 
-      if (hasPlaceholders) {
-        setStatus('Config needed', 'error');
-        errorElement.textContent =
-          'Paste the Firebase Web App config values into chat.html.';
-        sendButton.disabled = true;
-        return;
-      }
+      const auth = getAuth(app);
+      database = getDatabase(app);
 
-      try {
-        const app = getApps().length
-          ? getApps()[0]
-          : initializeApp(firebaseConfig);
+      onAuthStateChanged(auth, user => {
+        currentUser = user;
 
-        auth = getAuth(app);
-        database = getDatabase(app);
+        if (!user) {
+          setStatus('Sign in required', 'error');
+          errorElement.textContent =
+            'Sign in to FreeForm before using shared game chat.';
+          sendButton.disabled = true;
 
-        onAuthStateChanged(auth, user => {
-          currentUser = user;
-
-          if (!user) {
-            setStatus('Sign in required', 'error');
-            errorElement.textContent =
-              'Sign in to FreeForm before using shared game chat.';
-            sendButton.disabled = true;
-
-            if (typeof stopListening === 'function') {
-              stopListening();
-              stopListening = null;
-            }
-            return;
+          if (typeof stopListening === 'function') {
+            stopListening();
+            stopListening = null;
           }
+          return;
+        }
 
-          currentUsername =
-            user.displayName ||
-            localStorage.getItem('freeformUsername') ||
-            'Player';
+        let savedUsername = '';
+        try {
+          savedUsername = localStorage.getItem('freeformUsername') || '';
+        } catch {}
 
-          currentUsername = String(currentUsername).slice(0, 20);
-          errorElement.textContent = '';
-          sendButton.disabled = false;
-          startRoomListener();
-        });
-      } catch (error) {
-        console.error('Firebase chat setup failed:', error);
-        setStatus('Connection error', 'error');
-        errorElement.textContent =
-          'Firebase could not connect. Check the web app config and database URL.';
-        sendButton.disabled = true;
-      }
+        currentUsername = String(
+          user.displayName || savedUsername || 'Player'
+        ).slice(0, 20);
+
+        errorElement.textContent = '';
+        sendButton.disabled = false;
+        startRoomListener();
+      });
+    } catch (error) {
+      console.error('Firebase chat initialization failed:', error);
+      setStatus('Connection error', 'error');
+      errorElement.textContent =
+        'Could not connect to Firebase. Check the project configuration and rules.';
+      sendButton.disabled = true;
     }
 
     window.addEventListener('beforeunload', () => {
       if (typeof stopListening === 'function') stopListening();
     });
-
-    startChat();
   </script>
 </body>
 </html>

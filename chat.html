@@ -10,7 +10,6 @@
   <style>
     :root {
       --green: #39d278;
-      --green-dark: #168746;
       --panel: rgba(16, 23, 19, .97);
       --line: rgba(255,255,255,.13);
       --text: #f2f7f3;
@@ -107,11 +106,7 @@
       font-size: 22px;
     }
 
-    .message {
-      max-width: 95%;
-      align-self: flex-start;
-    }
-
+    .message { max-width: 95%; align-self: flex-start; }
     .message.own { align-self: flex-end; }
 
     .message-meta {
@@ -123,11 +118,7 @@
     }
 
     .message.own .message-meta { justify-content: flex-end; }
-
-    .message-name {
-      color: #c8f2d6;
-      font-weight: 700;
-    }
+    .message-name { color: #c8f2d6; font-weight: 700; }
 
     .message-text {
       padding: 8px 10px;
@@ -194,10 +185,7 @@
       cursor: pointer;
     }
 
-    .send-button:disabled {
-      cursor: not-allowed;
-      opacity: .45;
-    }
+    .send-button:disabled { cursor: not-allowed; opacity: .45; }
 
     @media (max-width: 520px) {
       .chat-header { min-height: 38px; }
@@ -243,9 +231,8 @@
 </form>
 
   </section>
-  <script src="assets/freeform.js"></script>
   <script type="module">
-    import { initializeApp, getApp, getApps } from
+    import { initializeApp, getApps } from
       'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
     import { getAuth, onAuthStateChanged } from
       'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
@@ -257,26 +244,25 @@
       query,
       orderByChild,
       limitToLast,
-      onChildAdded,
-      serverTimestamp
+      onChildAdded
     } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
 
     /*
-      Paste the same Firebase WEB APP config used by your project here.
-      Do not paste a service-account key or admin private key.
+      Replace these three placeholder values with the matching values
+      from Firebase Console > Project settings > General > Your apps > Config.
+      Do not use a service-account key here.
     */
     const firebaseConfig = {
-      apiKey: 'PASTE_YOUR_FIREBASE_WEB_API_KEY',
+      apiKey: 'REPLACE_WITH_WEB_API_KEY',
       authDomain: 'freeform-4f8df.firebaseapp.com',
       databaseURL: 'https://freeform-4f8df-default-rtdb.firebaseio.com',
       projectId: 'freeform-4f8df',
       storageBucket: 'freeform-4f8df.firebasestorage.app',
-      messagingSenderId: 'PASTE_YOUR_MESSAGING_SENDER_ID',
-      appId: 'PASTE_YOUR_FIREBASE_APP_ID'
+      messagingSenderId: 'REPLACE_WITH_MESSAGING_SENDER_ID',
+      appId: 'REPLACE_WITH_WEB_APP_ID'
     };
 
-    const params = new URLSearchParams(location.search);
-    const room = (params.get('game') || 'game')
+    const room = (new URLSearchParams(location.search).get('game') || 'game')
       .replace(/[^a-zA-Z0-9_-]/g, '')
       .slice(0, 40);
 
@@ -288,47 +274,20 @@
     const statusText = document.getElementById('statusText');
     const statusDot = document.getElementById('statusDot');
 
-    const clientId = crypto.randomUUID
-      ? crypto.randomUUID()
-      : String(Date.now()) + Math.random().toString(36).slice(2);
-
     let auth;
     let database;
     let currentUser = null;
-    let currentUsername = 'Guest';
+    let currentUsername = 'Player';
     let stopListening = null;
-    const seenMessageIds = new Set();
 
     function setStatus(text, state = '') {
       statusText.textContent = text;
       statusDot.className = 'status-dot' + (state ? ' ' + state : '');
     }
 
-    function showError(text) {
-      errorElement.textContent = text || '';
-    }
-
-    function getUsernameFromProfile(profile) {
-      if (typeof profile === 'string') return profile;
-      if (profile && typeof profile.username === 'string') return profile.username;
-      if (profile && typeof profile.displayName === 'string') return profile.displayName;
-      return currentUser?.displayName || 'Player';
-    }
-
-    async function resolveUsername(user) {
-      try {
-        const nameKey = 'freeformUsername';
-        const stored = localStorage.getItem(nameKey);
-        if (stored && stored.trim()) return stored.trim().slice(0, 20);
-      } catch {}
-
-      return (user.displayName || 'Player').slice(0, 20);
-    }
-
     function addMessage(id, data) {
-      if (!data || typeof data.text !== 'string' || seenMessageIds.has(id)) return;
+      if (!data || typeof data.text !== 'string') return;
 
-      seenMessageIds.add(id);
       document.getElementById('emptyState')?.remove();
 
       const own = data.uid === currentUser?.uid;
@@ -343,24 +302,24 @@
       name.textContent = data.username || 'Player';
 
       const time = document.createElement('time');
-      const timestamp = typeof data.createdAt === 'number' ? data.createdAt : Date.now();
-      const date = new Date(timestamp);
+      const date = new Date(
+        typeof data.createdAt === 'number' ? data.createdAt : Date.now()
+      );
       time.dateTime = date.toISOString();
       time.textContent = date.toLocaleTimeString([], {
         hour: 'numeric',
         minute: '2-digit'
       });
 
-      const messageText = document.createElement('div');
-      messageText.className = 'message-text';
-      messageText.textContent = data.text.slice(0, 180);
+      const text = document.createElement('div');
+      text.className = 'message-text';
+      text.textContent = data.text.slice(0, 180);
 
       meta.append(name, time);
-      article.append(meta, messageText);
+      article.append(meta, text);
       messagesElement.appendChild(article);
       messagesElement.scrollTop = messagesElement.scrollHeight;
 
-      // Tell the game page to display the message over that sender's character.
       window.parent.postMessage({
         type: 'freeform-chat-message',
         messageId: id,
@@ -370,21 +329,20 @@
       }, location.origin);
     }
 
-    async function startRoomListener() {
+    function startRoomListener() {
       if (!currentUser || !database) return;
 
       if (typeof stopListening === 'function') {
         stopListening();
-        stopListening = null;
       }
 
-      const roomQuery = query(
+      const roomMessages = query(
         ref(database, 'gameChats/' + room),
         orderByChild('createdAt'),
         limitToLast(60)
       );
 
-      stopListening = onChildAdded(roomQuery, snapshot => {
+      stopListening = onChildAdded(roomMessages, snapshot => {
         addMessage(snapshot.key, snapshot.val());
       });
 
@@ -398,12 +356,12 @@
       if (!text) return;
 
       if (!currentUser || !database) {
-        showError('Sign in to Firebase to send messages to other players.');
+        errorElement.textContent = 'Sign in to FreeForm to use shared chat.';
         return;
       }
 
       sendButton.disabled = true;
-      showError('');
+      errorElement.textContent = '';
 
       try {
         const messageRef = push(ref(database, 'gameChats/' + room));
@@ -412,17 +370,16 @@
           uid: currentUser.uid,
           username: currentUsername,
           text,
-          createdAt: Date.now(),
-          serverTimestamp: serverTimestamp(),
-          clientId
+          createdAt: Date.now()
         });
 
         input.value = '';
         input.style.height = '36px';
         input.focus();
       } catch (error) {
-        console.error('Chat send failed:', error);
-        showError('Message could not be sent. Check your Firebase rules and sign-in.');
+        console.error('Chat message failed to send:', error);
+        errorElement.textContent =
+          'Message failed. Check Firebase sign-in and Realtime Database rules.';
       } finally {
         sendButton.disabled = false;
       }
@@ -440,31 +397,35 @@
       input.style.height = Math.min(input.scrollHeight, 88) + 'px';
     });
 
-    async function initializeChat() {
-      try {
-        if (
-          !firebaseConfig.apiKey ||
-          firebaseConfig.apiKey.startsWith('PASTE_') ||
-          !firebaseConfig.appId ||
-          firebaseConfig.appId.startsWith('PASTE_')
-        ) {
-          setStatus('Firebase config needed', 'error');
-          showError('Add your Firebase web app config in chat.html before using shared chat.');
-          sendButton.disabled = true;
-          return;
-        }
+    async function startChat() {
+      const hasPlaceholders =
+        firebaseConfig.apiKey.startsWith('REPLACE_') ||
+        firebaseConfig.messagingSenderId.startsWith('REPLACE_') ||
+        firebaseConfig.appId.startsWith('REPLACE_');
 
-        const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+      if (hasPlaceholders) {
+        setStatus('Config needed', 'error');
+        errorElement.textContent =
+          'Paste the Firebase Web App config values into chat.html.';
+        sendButton.disabled = true;
+        return;
+      }
+
+      try {
+        const app = getApps().length
+          ? getApps()[0]
+          : initializeApp(firebaseConfig);
+
         auth = getAuth(app);
         database = getDatabase(app);
 
-        onAuthStateChanged(auth, async user => {
+        onAuthStateChanged(auth, user => {
           currentUser = user;
 
           if (!user) {
-            currentUsername = 'Guest';
             setStatus('Sign in required', 'error');
-            showError('Sign in to FreeForm to read and send shared chat messages.');
+            errorElement.textContent =
+              'Sign in to FreeForm before using shared game chat.';
             sendButton.disabled = true;
 
             if (typeof stopListening === 'function') {
@@ -474,15 +435,21 @@
             return;
           }
 
-          currentUsername = await resolveUsername(user);
-          showError('');
+          currentUsername =
+            user.displayName ||
+            localStorage.getItem('freeformUsername') ||
+            'Player';
+
+          currentUsername = String(currentUsername).slice(0, 20);
+          errorElement.textContent = '';
           sendButton.disabled = false;
-          await startRoomListener();
+          startRoomListener();
         });
       } catch (error) {
-        console.error('Firebase chat initialization failed:', error);
+        console.error('Firebase chat setup failed:', error);
         setStatus('Connection error', 'error');
-        showError('Could not connect to Firebase. Check the web config and database URL.');
+        errorElement.textContent =
+          'Firebase could not connect. Check the web app config and database URL.';
         sendButton.disabled = true;
       }
     }
@@ -491,7 +458,7 @@
       if (typeof stopListening === 'function') stopListening();
     });
 
-    initializeChat();
+    startChat();
   </script>
 </body>
 </html>

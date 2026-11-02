@@ -1,1 +1,810 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FreeForm | Avatar Studio</title><link rel="stylesheet" href="assets/freeform.css"><style>.studio{display:grid;grid-template-columns:minmax(0,1fr) minmax(240px,.8fr);gap:16px;margin:28px 0}.swatch-row{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;margin:18px 0}.swatch-row input{width:54px;height:42px;padding:2px;border:1px solid var(--line);border-radius:8px;background:transparent}.preview{display:grid;place-items:center;min-height:300px;border-radius:14px;background:linear-gradient(#8ab2bd,#d2e2d6 65%,#a3b8a1 65%)}.avatar{position:relative;width:125px;height:205px}.avatar .head{position:absolute;left:35px;top:0;width:55px;height:55px;border-radius:35%;background:#f4c95d;border:3px solid #29343d;display:grid;place-items:center;overflow:hidden}.avatar .head img{width:100%;height:100%}.avatar .torso{position:absolute;left:22px;top:59px;width:80px;height:77px;border-radius:7px;background:#3976d2;border:3px solid #29343d}.avatar .leg{position:absolute;top:132px;width:34px;height:70px;border-radius:5px;background:#29343d;border:3px solid #29343d}.avatar .left{left:25px}.avatar .right{right:25px}.avatar .arm{position:absolute;top:63px;width:22px;height:69px;border-radius:6px;background:#3976d2;border:3px solid #29343d}.avatar .al{left:0}.avatar .ar{right:0}@media(max-width:700px){.studio{grid-template-columns:1fr}}</style></head><body><div class="wrap"><header class="nav"><a class="brand" href="index.html"><span>F</span>FreeForm</a><nav class="links"><a class="btn" href="profile.html">Profile</a><a class="btn" href="index.html">Home</a></nav></header><main style="padding-top:30px"><div class="eyebrow">Make it yours</div><h1 class="page-title">Avatar Studio</h1><p class="muted">Pick colors and preview your character. Your choices are saved to your account when Firebase is configured and you are signed in.</p><div class="studio"><section class="panel"><h2>Colors</h2><div class="swatch-row"><label for="body-color">Body & arms</label><input id="body-color" type="color" value="#3976d2"></div><div class="swatch-row"><label for="head-color">Head</label><input id="head-color" type="color" value="#f4c95d"></div><div class="swatch-row"><label for="legs-color">Legs</label><input id="legs-color" type="color" value="#29343d"></div><button id="randomize" class="btn">Random colors</button> <button id="reset" class="btn">Reset</button><p id="saved" class="message" aria-live="polite">Changes save automatically.</p></section><section class="panel"><h2>Preview</h2><div class="preview"><div class="avatar"><div class="head" id="preview-head"><img src="assets/default-face.svg" alt="Default character face"></div><div class="torso" id="preview-body"></div><div class="arm al" id="arm-left"></div><div class="arm ar" id="arm-right"></div><div class="leg left" id="leg-left"></div><div class="leg right" id="leg-right"></div></div></div></section></div></main><footer class="footer">Avatar colors are stored locally and sync to Firebase for signed-in users. Some existing 3D demos have their own model materials.</footer></div><script src="assets/freeform.js"></script><script type="module" src="assets/firebase-cloud.js"></script><script type="module">const ids={body:'body-color',head:'head-color',legs:'legs-color'};const colors=FreeForm.getAvatar();for(const [k,id] of Object.entries(ids))document.getElementById(id).value=colors[k];function paint(save=true){const c={};for(const [k,id] of Object.entries(ids))c[k]=document.getElementById(id).value;document.getElementById('preview-body').style.background=c.body;document.getElementById('arm-left').style.background=c.body;document.getElementById('arm-right').style.background=c.body;document.getElementById('preview-head').style.background=c.head;document.getElementById('leg-left').style.background=c.legs;document.getElementById('leg-right').style.background=c.legs;if(save){FreeForm.saveAvatar(c);document.getElementById('saved').textContent='Saved locally.';if(window.FreeFormCloud?.ready)window.FreeFormCloud.saveAvatar(c).then(ok=>{document.getElementById('saved').textContent=ok?'Saved to your Firebase account.':'Saved locally; sign in to sync.'}).catch(()=>{document.getElementById('saved').textContent='Saved locally; Firebase sync failed.'})}}Object.values(ids).forEach(id=>document.getElementById(id).addEventListener('input',()=>paint()));document.getElementById('randomize').addEventListener('click',()=>{for(const id of Object.values(ids))document.getElementById(id).value='#'+Math.floor(Math.random()*16777215).toString(16).padStart(6,'0');paint()});document.getElementById('reset').addEventListener('click',()=>{for(const [k,id] of Object.entries(ids))document.getElementById(id).value=FreeForm.defaults[k];paint()});paint(false);if(window.FreeFormCloud?.ready)window.FreeFormCloud.getProfile().then(profile=>{if(profile?.avatar){for(const [k,id] of Object.entries(ids))document.getElementById(id).value=profile.avatar[k]||FreeForm.defaults[k];paint(false)}}).catch(()=>{});</script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101713">
+  <title>FreeForm | Customize Avatar</title>
+  <link rel="stylesheet" href="assets/freeform.css">
+  <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      }
+    }
+  </script>
+  <style>
+    :root {
+      --page: #101713;
+      --panel: #18221c;
+      --panel-light: #202c24;
+      --line: rgba(255,255,255,.1);
+      --text: #f2f7f3;
+      --muted: #a6b2a9;
+      --green: #39d278;
+      --green-dark: #1b9b52;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      background:
+        radial-gradient(ellipse at 60% 0%, rgba(43, 132, 77, .15), transparent 45%),
+        var(--page);
+      color: var(--text);
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    a { color: inherit; text-decoration: none; }
+
+    .wrap {
+      width: min(1180px, calc(100% - 34px));
+      margin: 0 auto;
+    }
+
+    .nav {
+      min-height: 68px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 21px;
+      font-weight: 800;
+      letter-spacing: -.5px;
+    }
+
+    .brand span {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border-radius: 9px;
+      background: var(--green-dark);
+      color: white;
+      font-size: 19px;
+    }
+
+    .links {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn {
+      min-height: 39px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 0 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 700;
+      transition: background .15s ease, border-color .15s ease;
+    }
+
+    .btn:hover {
+      border-color: rgba(57,210,120,.4);
+      background: var(--panel-light);
+    }
+
+    .btn.primary {
+      border-color: var(--green-dark);
+      background: var(--green-dark);
+      color: #fff;
+    }
+
+    .btn.primary:hover { background: #168746; }
+
+    .main {
+      padding: 30px 0 50px;
+    }
+
+    .heading { margin-bottom: 20px; }
+
+    .eyebrow {
+      margin-bottom: 7px;
+      color: var(--green);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+    }
+
+    .heading h1 {
+      margin: 0;
+      font-size: clamp(30px, 5vw, 42px);
+      letter-spacing: -1.4px;
+    }
+
+    .heading p {
+      max-width: 650px;
+      margin: 9px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .editor {
+      display: grid;
+      grid-template-columns: minmax(0, 1.45fr) minmax(290px, .75fr);
+      gap: 18px;
+      align-items: stretch;
+    }
+
+    .preview-panel,
+    .controls-panel {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      background: rgba(24,34,28,.94);
+    }
+
+    .preview-header {
+      min-height: 55px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 0 17px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .preview-title {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .preview-title i { color: var(--green); }
+
+    .preview-hint {
+      color: var(--muted);
+      font-size: 11px;
+      text-align: right;
+    }
+
+    .preview-area {
+      height: min(560px, 65vh);
+      min-height: 360px;
+      position: relative;
+      background:
+        radial-gradient(ellipse at 50% 78%, rgba(47, 137, 76, .2), transparent 42%),
+        linear-gradient(180deg, #1c2921, #131b16);
+    }
+
+    #avatarCanvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      cursor: grab;
+      touch-action: none;
+    }
+
+    #avatarCanvas:active { cursor: grabbing; }
+
+    .preview-badge {
+      position: absolute;
+      right: 14px;
+      bottom: 14px;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(11,16,13,.75);
+      color: #dce8df;
+      font-size: 11px;
+      pointer-events: none;
+    }
+
+    .preview-badge i { color: var(--green); }
+
+    .controls-panel { padding: 20px; }
+
+    .controls-panel h2 {
+      margin: 0;
+      font-size: 19px;
+      letter-spacing: -.4px;
+    }
+
+    .controls-description {
+      margin: 7px 0 20px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .color-options {
+      display: grid;
+      gap: 11px;
+    }
+
+    .color-row {
+      min-height: 61px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: rgba(255,255,255,.025);
+    }
+
+    .color-label {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      min-width: 0;
+    }
+
+    .color-icon {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      flex: 0 0 auto;
+      place-items: center;
+      border-radius: 8px;
+      background: var(--panel-light);
+      color: var(--green);
+    }
+
+    .color-label strong {
+      display: block;
+      font-size: 13px;
+    }
+
+    .color-label small {
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .color-input {
+      width: 44px;
+      height: 36px;
+      flex: 0 0 auto;
+      padding: 3px;
+      border: 1px solid rgba(255,255,255,.2);
+      border-radius: 7px;
+      background: #101713;
+      cursor: pointer;
+    }
+
+    .color-input::-webkit-color-swatch-wrapper { padding: 2px; }
+    .color-input::-webkit-color-swatch { border: 0; border-radius: 4px; }
+    .color-input::-moz-color-swatch { border: 0; border-radius: 4px; }
+
+    .preset-title {
+      margin: 19px 0 9px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .7px;
+      text-transform: uppercase;
+    }
+
+    .presets {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .preset {
+      width: 30px;
+      height: 30px;
+      border: 2px solid rgba(255,255,255,.25);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: transform .15s ease, border-color .15s ease;
+    }
+
+    .preset:hover {
+      transform: scale(1.1);
+      border-color: white;
+    }
+
+    .control-actions {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 9px;
+      margin-top: 20px;
+    }
+
+    .control-actions .btn { min-height: 43px; }
+
+    .save-status {
+      min-height: 18px;
+      margin: 11px 0 0;
+      color: var(--green);
+      font-size: 12px;
+    }
+
+    .error-message {
+      position: absolute;
+      inset: 12px;
+      display: none;
+      place-items: center;
+      padding: 20px;
+      border: 1px solid rgba(255,100,100,.3);
+      border-radius: 10px;
+      background: rgba(20,18,18,.92);
+      color: #ffd6d6;
+      font-size: 13px;
+      line-height: 1.6;
+      text-align: center;
+    }
+
+    .page-footer {
+      margin-top: 18px;
+      color: #819087;
+      font-size: 11px;
+      line-height: 1.6;
+    }
+
+    @media (max-width: 800px) {
+      .editor { grid-template-columns: 1fr; }
+      .preview-area { height: 460px; }
+    }
+
+    @media (max-width: 520px) {
+      .wrap { width: calc(100% - 22px); }
+      .nav { min-height: 60px; }
+      .links { gap: 5px; }
+      .links .btn { min-height: 35px; padding: 0 9px; font-size: 11px; }
+      .main { padding-top: 22px; }
+      .preview-area { height: 390px; min-height: 330px; }
+      .controls-panel { padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="nav">
+      <a class="brand" href="index.html">
+        <span>F</span>FreeForm
+      </a>
+  <nav class="links" aria-label="Main navigation">
+    <a class="btn" href="index.html">
+      <i class="fa-solid fa-compass" aria-hidden="true"></i> Discover
+    </a>
+    <a class="btn" href="profile.html">
+      <i class="fa-solid fa-user" aria-hidden="true"></i> Profile
+    </a>
+  </nav>
+</header>
+
+<main class="main">
+  <section class="heading">
+    <div class="eyebrow">Avatar studio</div>
+    <h1>Customize your character</h1>
+    <p>Change your character’s colors and preview the 3D model. Drag the character to rotate the view, or use the color controls to try a new look.</p>
+  </section>
+
+  <section class="editor">
+    <div class="preview-panel">
+      <div class="preview-header">
+        <div class="preview-title">
+          <i class="fa-solid fa-cube" aria-hidden="true"></i>
+          Character preview
+        </div>
+        <div class="preview-hint">Drag to rotate · Scroll to zoom</div>
+      </div>
+
+      <div class="preview-area">
+        <canvas id="avatarCanvas" aria-label="Interactive 3D character preview"></canvas>
+        <div class="preview-badge">
+          <i class="fa-solid fa-circle" aria-hidden="true"></i>
+          <span id="previewUsername">Guest</span>
+        </div>
+        <div class="error-message" id="renderError" role="alert">
+          The 3D preview could not start. Check your browser’s WebGL support and internet connection, then reload.
+        </div>
+      </div>
+    </div>
+
+    <aside class="controls-panel">
+      <h2>Character colors</h2>
+      <p class="controls-description">Choose a color for each part. The preview updates immediately; save when you’re happy with the result.</p>
+
+      <div class="color-options">
+        <label class="color-row" for="headColor">
+          <span class="color-label">
+            <span class="color-icon"><i class="fa-solid fa-face-smile" aria-hidden="true"></i></span>
+            <span><strong>Head</strong><small>Face and head color</small></span>
+          </span>
+          <input class="color-input" id="headColor" type="color" value="#f4c95d">
+        </label>
+
+        <label class="color-row" for="bodyColor">
+          <span class="color-label">
+            <span class="color-icon"><i class="fa-solid fa-shirt" aria-hidden="true"></i></span>
+            <span><strong>Body and arms</strong><small>Torso and arm color</small></span>
+          </span>
+          <input class="color-input" id="bodyColor" type="color" value="#3976d2">
+        </label>
+
+        <label class="color-row" for="legsColor">
+          <span class="color-label">
+            <span class="color-icon"><i class="fa-solid fa-person" aria-hidden="true"></i></span>
+            <span><strong>Legs</strong><small>Pants color</small></span>
+          </span>
+          <input class="color-input" id="legsColor" type="color" value="#29343d">
+        </label>
+      </div>
+
+      <div class="preset-title">Quick colors</div>
+      <div class="presets" aria-label="Quick body color choices">
+        <button class="preset" type="button" data-color="#3976d2" style="background:#3976d2" aria-label="Blue"></button>
+        <button class="preset" type="button" data-color="#e74c3c" style="background:#e74c3c" aria-label="Red"></button>
+        <button class="preset" type="button" data-color="#8e44ad" style="background:#8e44ad" aria-label="Purple"></button>
+        <button class="preset" type="button" data-color="#00a650" style="background:#00a650" aria-label="Green"></button>
+        <button class="preset" type="button" data-color="#f39c12" style="background:#f39c12" aria-label="Orange"></button>
+        <button class="preset" type="button" data-color="#242b36" style="background:#242b36" aria-label="Dark gray"></button>
+      </div>
+
+      <div class="control-actions">
+        <button class="btn primary" id="saveAvatar" type="button">
+          <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Save avatar
+        </button>
+        <button class="btn" id="resetAvatar" type="button" aria-label="Reset avatar colors">
+          <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
+        </button>
+      </div>
+
+      <p class="save-status" id="saveStatus" aria-live="polite"></p>
+    </aside>
+  </section>
+
+  <p class="page-footer">
+    Saved avatar colors are shared with FreeForm pages that use <code>FreeForm.getAvatar()</code>.
+  </p>
+</main>
+
+  </div>
+  <script src="assets/freeform.js"></script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+
+    const canvas = document.getElementById('avatarCanvas');
+    const errorBox = document.getElementById('renderError');
+
+    const defaults = {
+      body: '#3976d2',
+      head: '#f4c95d',
+      legs: '#29343d'
+    };
+
+    const controls = {
+      head: document.getElementById('headColor'),
+      body: document.getElementById('bodyColor'),
+      legs: document.getElementById('legsColor')
+    };
+
+    function normalizeColors(colors) {
+      return {
+        body: colors?.body || defaults.body,
+        head: colors?.head || defaults.head,
+        legs: colors?.legs || defaults.legs
+      };
+    }
+
+    function loadSavedColors() {
+      try {
+        if (window.FreeForm?.getAvatar) {
+          return normalizeColors(FreeForm.getAvatar());
+        }
+
+        const saved = JSON.parse(localStorage.getItem('freeformAvatar') || '{}');
+        return normalizeColors(saved);
+      } catch {
+        return { ...defaults };
+      }
+    }
+
+    let avatarColors = loadSavedColors();
+
+    controls.body.value = avatarColors.body;
+    controls.head.value = avatarColors.head;
+    controls.legs.value = avatarColors.legs;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color('#18221c');
+
+    const renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: true,
+      alpha: false
+    });
+
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x58645a, 2.2));
+
+    const keyLight = new THREE.DirectionalLight(0xffffff, 2.6);
+    keyLight.position.set(7, 10, 8);
+    scene.add(keyLight);
+
+    const fillLight = new THREE.DirectionalLight(0x91ffb6, 0.8);
+    fillLight.position.set(-6, 5, -4);
+    scene.add(fillLight);
+
+    const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 100);
+    camera.position.set(6.8, 5.8, 9);
+    camera.lookAt(0, 2.8, 0);
+
+    const avatarRoot = new THREE.Group();
+    const characterModel = new THREE.Group();
+    avatarRoot.add(characterModel);
+    scene.add(avatarRoot);
+
+    const bodyMaterial = new THREE.MeshStandardMaterial({
+      color: avatarColors.body,
+      roughness: 0.78
+    });
+
+    const headMaterial = new THREE.MeshStandardMaterial({
+      color: avatarColors.head,
+      roughness: 0.78
+    });
+
+    const legMaterial = new THREE.MeshStandardMaterial({
+      color: avatarColors.legs,
+      roughness: 0.82
+    });
+
+    function addRoundedBox(name, size, position, material, parent = characterModel) {
+      const mesh = new THREE.Mesh(
+        new RoundedBoxGeometry(size[0], size[1], size[2], 3, 0.07),
+        material
+      );
+
+      mesh.name = name;
+      mesh.position.set(position[0], position[1], position[2]);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      parent.add(mesh);
+      return mesh;
+    }
+
+    // Head
+    const headRadius = 0.6;
+    const headHeight = 1.1;
+    const bevel = 0.16;
+
+    const headProfile = [
+      new THREE.Vector2(0, -headHeight / 2),
+      new THREE.Vector2(headRadius - bevel, -headHeight / 2),
+      new THREE.Vector2(headRadius, -headHeight / 2 + bevel),
+      new THREE.Vector2(headRadius, headHeight / 2 - bevel),
+      new THREE.Vector2(headRadius - bevel, headHeight / 2),
+      new THREE.Vector2(0, headHeight / 2)
+    ];
+
+    const head = new THREE.Mesh(
+      new THREE.LatheGeometry(headProfile, 32),
+      headMaterial
+    );
+    head.position.set(0, 4.5, 0);
+    head.castShadow = true;
+    head.receiveShadow = true;
+    characterModel.add(head);
+
+    // Keep the same face asset used by Character.html.
+    const faceTexture = new THREE.TextureLoader().load(
+      'assets/default-face.svg',
+      undefined,
+      undefined,
+      () => {
+        console.warn('Could not load assets/default-face.svg');
+      }
+    );
+    faceTexture.colorSpace = THREE.SRGBColorSpace;
+
+    const face = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.72, 0.72),
+      new THREE.MeshBasicMaterial({
+        map: faceTexture,
+        transparent: true,
+        depthWrite: false
+      })
+    );
+    face.position.set(0, 4.5, -0.585);
+    face.rotation.y = Math.PI;
+    face.renderOrder = 3;
+    characterModel.add(face);
+
+    // Torso
+    addRoundedBox('Torso', [2, 2, 1], [0, 3, 0], bodyMaterial);
+
+    // Arms
+    addRoundedBox('Left Arm', [1, 2, 1], [-1.5, 3, 0], bodyMaterial);
+    addRoundedBox('Right Arm', [1, 2, 1], [1.5, 3, 0], bodyMaterial);
+
+    // Legs
+    addRoundedBox('Left Leg', [1, 2, 1], [-0.5, 1, 0], legMaterial);
+    addRoundedBox('Right Leg', [1, 2, 1], [0.5, 1, 0], legMaterial);
+
+    // Subtle ground platform.
+    const platform = new THREE.Mesh(
+      new THREE.CylinderGeometry(2.1, 2.1, 0.12, 48),
+      new THREE.MeshStandardMaterial({
+        color: '#24372a',
+        roughness: 0.95
+      })
+    );
+    platform.position.y = -0.12;
+    platform.receiveShadow = true;
+    scene.add(platform);
+
+    const grid = new THREE.GridHelper(20, 20, 0x35523d, 0x283b2e);
+    grid.position.y = -0.055;
+    scene.add(grid);
+
+    function updateMaterials(colors) {
+      avatarColors = normalizeColors(colors);
+      bodyMaterial.color.set(avatarColors.body);
+      headMaterial.color.set(avatarColors.head);
+      legMaterial.color.set(avatarColors.legs);
+      bodyMaterial.needsUpdate = true;
+      headMaterial.needsUpdate = true;
+      legMaterial.needsUpdate = true;
+    }
+
+    function readControls() {
+      return {
+        body: controls.body.value,
+        head: controls.head.value,
+        legs: controls.legs.value
+      };
+    }
+
+    Object.values(controls).forEach(input => {
+      input.addEventListener('input', () => {
+        updateMaterials(readControls());
+        document.getElementById('saveStatus').textContent = 'Preview updated. Save to keep these colors.';
+      });
+    });
+
+    document.querySelectorAll('.preset').forEach(button => {
+      button.addEventListener('click', () => {
+        controls.body.value = button.dataset.color;
+        updateMaterials(readControls());
+        document.getElementById('saveStatus').textContent = 'Color preview updated. Save to keep it.';
+      });
+    });
+
+    document.getElementById('saveAvatar').addEventListener('click', () => {
+      const colors = readControls();
+
+      try {
+        if (window.FreeForm?.setAvatar) {
+          FreeForm.setAvatar(colors);
+        } else {
+          localStorage.setItem('freeformAvatar', JSON.stringify(colors));
+        }
+
+        updateMaterials(colors);
+        document.getElementById('saveStatus').textContent = 'Avatar colors saved.';
+      } catch (error) {
+        console.error('Could not save avatar colors:', error);
+        document.getElementById('saveStatus').textContent = 'Could not save colors in this browser.';
+      }
+    });
+
+    document.getElementById('resetAvatar').addEventListener('click', () => {
+      controls.body.value = defaults.body;
+      controls.head.value = defaults.head;
+      controls.legs.value = defaults.legs;
+      updateMaterials(defaults);
+      document.getElementById('saveStatus').textContent = 'Default colors restored in the preview. Save to keep them.';
+    });
+
+    const username = window.FreeForm?.getSession?.() || 'Guest';
+    document.getElementById('previewUsername').textContent = username;
+
+    // Drag to rotate the 3D preview.
+    let dragging = false;
+    let previousX = 0;
+    let previousY = 0;
+    let yaw = 0.62;
+    let pitch = 0.18;
+    let zoom = 10;
+
+    function updateCamera() {
+      const horizontal = zoom * Math.cos(pitch);
+      camera.position.set(
+        Math.sin(yaw) * horizontal,
+        2.8 + zoom * Math.sin(pitch),
+        Math.cos(yaw) * horizontal
+      );
+      camera.lookAt(0, 2.7, 0);
+    }
+
+    canvas.addEventListener('pointerdown', event => {
+      dragging = true;
+      previousX = event.clientX;
+      previousY = event.clientY;
+      canvas.setPointerCapture(event.pointerId);
+    });
+
+    canvas.addEventListener('pointerup', () => {
+      dragging = false;
+    });
+
+    canvas.addEventListener('pointercancel', () => {
+      dragging = false;
+    });
+
+    canvas.addEventListener('pointermove', event => {
+      if (!dragging) return;
+
+      yaw -= (event.clientX - previousX) * 0.008;
+      pitch += (event.clientY - previousY) * 0.005;
+      pitch = THREE.MathUtils.clamp(pitch, -0.4, 0.8);
+      previousX = event.clientX;
+      previousY = event.clientY;
+      updateCamera();
+    });
+
+    canvas.addEventListener('wheel', event => {
+      event.preventDefault();
+      zoom = THREE.MathUtils.clamp(zoom + event.deltaY * 0.01, 6, 15);
+      updateCamera();
+    }, { passive: false });
+
+    function resizeRenderer() {
+      const bounds = canvas.getBoundingClientRect();
+      const width = Math.max(1, bounds.width);
+      const height = Math.max(1, bounds.height);
+
+      renderer.setSize(width, height, false);
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+    }
+
+    const resizeObserver = new ResizeObserver(resizeRenderer);
+    resizeObserver.observe(canvas.parentElement);
+    resizeRenderer();
+    updateCamera();
+
+    function animate() {
+      requestAnimationFrame(animate);
+      if (!dragging) {
+        avatarRoot.rotation.y += 0.003;
+      }
+      renderer.render(scene, camera);
+    }
+
+    try {
+      animate();
+    } catch (error) {
+      console.error('3D avatar preview failed:', error);
+      errorBox.style.display = 'grid';
+    }
+  </script>
+</body>
+</html>

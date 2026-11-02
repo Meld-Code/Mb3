@@ -1,8 +1,9 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#dedede">
 <title>FreeForm | Sword Fight</title>
 <style>
 * { box-sizing: border-box; }
@@ -53,20 +54,65 @@ button {
   margin-top: 7px;
 }
 
-#gameChat {
+#chatPanel {
   position: fixed;
   right: 16px;
   bottom: 16px;
+  z-index: 1000;
   width: 300px;
   height: 360px;
+  transition: opacity .15s ease, transform .15s ease;
+}
+
+#gameChat {
+  width: 100%;
+  height: 100%;
   border: 0;
-  z-index: 20;
   background: transparent;
 }
 
-#playerChatBubble {
+#chatPanel.closed {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px);
+}
+
+#openChat {
   position: fixed;
-  z-index: 15;
+  right: 16px;
+  bottom: 16px;
+  z-index: 1001;
+  display: none;
+  padding: 10px 14px;
+  border: 1px solid #168746;
+  border-radius: 9px;
+  background: #168746;
+  color: #fff;
+  font-weight: 700;
+}
+
+#openChat.visible { display: inline-flex; align-items: center; gap: 8px; }
+
+#closeChat {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  z-index: 2;
+  width: 29px;
+  height: 29px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid rgba(255,255,255,.2);
+  border-radius: 7px;
+  background: #18221c;
+  color: #fff;
+  font-size: 18px;
+}
+
+.world-chat-bubble {
+  position: fixed;
+  z-index: 900;
   display: none;
   max-width: 240px;
   padding: 8px 11px;
@@ -82,9 +128,9 @@ button {
   pointer-events: none;
 }
 
-#playerChatBubble.visible { display: block; }
+.world-chat-bubble.visible { display: block; }
 
-#playerChatBubble strong {
+.world-chat-bubble strong {
   display: block;
   margin-bottom: 3px;
   color: #168746;
@@ -100,11 +146,16 @@ button {
     font-size: 13px;
   }
 
-  #gameChat {
+  #chatPanel {
     right: 8px;
     bottom: 8px;
     width: min(300px, calc(100vw - 16px));
     height: 310px;
+  }
+
+  #openChat {
+    right: 8px;
+    bottom: 8px;
   }
 }
 </style>
@@ -123,26 +174,39 @@ button {
   <button id="toggleHitbox" type="button">Hide hitbox</button>
   <a id="leaveRoom" href="index.html">Leave Sword Fight</a>
 </div>
-<div id="playerChatBubble" aria-live="polite">
-  <strong id="playerChatBubbleName"></strong>
-  <span id="playerChatBubbleText"></span>
+<div id="chatPanel">
+  <button id="closeChat" type="button" aria-label="Close chat">×</button>
+  <iframe
+    id="gameChat"
+    src="chat.html?game=swordfight"
+    title="Sword Fight chat"
+  ></iframe>
 </div>
-<iframe
-  id="gameChat"
-  src="chat.html?game=swordfight"
-  title="In-game chat"
-  allow="clipboard-write"
-></iframe>
+<button id="openChat" type="button" aria-label="Open chat">
+  <i class="fa-solid fa-comments" aria-hidden="true"></i>
+  Chat
+</button>
 <script src="assets/freeform.js"></script>
+<script>
+  const chatPanel = document.getElementById('chatPanel');
+  const openChatButton = document.getElementById('openChat');
+
+  document.getElementById('closeChat').addEventListener('click', () => {
+    chatPanel.classList.add('closed');
+    openChatButton.classList.add('visible');
+  });
+
+  openChatButton.addEventListener('click', () => {
+    chatPanel.classList.remove('closed');
+    openChatButton.classList.remove('visible');
+  });
+</script>
 <script type="module">
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
 const canvas = document.getElementById('mainView');
 const chatFrame = document.getElementById('gameChat');
-const chatBubble = document.getElementById('playerChatBubble');
-const chatBubbleName = document.getElementById('playerChatBubbleName');
-const chatBubbleText = document.getElementById('playerChatBubbleText');
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xdedede);
@@ -151,7 +215,6 @@ const renderer = new THREE.WebGLRenderer({
   canvas,
   antialias: true
 });
-
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -168,10 +231,7 @@ scene.add(sun);
 
 const ground = new THREE.Mesh(
   new THREE.PlaneGeometry(1000, 1000),
-  new THREE.MeshStandardMaterial({
-    color: 0xaaaaaa,
-    roughness: 1
-  })
+  new THREE.MeshStandardMaterial({ color: 0xaaaaaa, roughness: 1 })
 );
 ground.rotation.x = -Math.PI / 2;
 ground.position.y = -0.035;
@@ -197,29 +257,27 @@ function readAvatarColors() {
       return { ...defaults, ...window.FreeForm.getAvatar() };
     }
   } catch (error) {
-    console.warn('Could not read saved avatar colors.', error);
+    console.warn('Could not read avatar colors:', error);
   }
 
   return defaults;
 }
 
-function createCharacter() {
+function createCharacter(colorsOverride) {
   const root = new THREE.Group();
   const model = new THREE.Group();
   root.add(model);
 
-  const colors = readAvatarColors();
+  const colors = { ...readAvatarColors(), ...(colorsOverride || {}) };
 
   const bodyMaterial = new THREE.MeshStandardMaterial({
     color: colors.body,
     roughness: 0.9
   });
-
   const headMaterial = new THREE.MeshStandardMaterial({
     color: colors.head,
     roughness: 0.9
   });
-
   const legMaterial = new THREE.MeshStandardMaterial({
     color: colors.legs,
     roughness: 0.9
@@ -230,7 +288,6 @@ function createCharacter() {
       new RoundedBoxGeometry(size[0], size[1], size[2], 2, 0.05),
       material
     );
-
     mesh.name = name;
     mesh.position.set(position[0], position[1], position[2]);
     mesh.castShadow = true;
@@ -242,7 +299,6 @@ function createCharacter() {
   const headRadius = 0.6;
   const headHeight = 1.1;
   const headBevel = 0.16;
-
   const headProfile = [
     new THREE.Vector2(0, -headHeight / 2),
     new THREE.Vector2(headRadius - headBevel, -headHeight / 2),
@@ -256,7 +312,6 @@ function createCharacter() {
     new THREE.LatheGeometry(headProfile, 32),
     headMaterial
   );
-
   head.name = 'Head';
   head.position.set(0, 4.5, 0);
   head.castShadow = true;
@@ -267,9 +322,8 @@ function createCharacter() {
     'assets/default-face.svg',
     undefined,
     undefined,
-    error => console.warn('Could not load assets/default-face.svg', error)
+    error => console.warn('Could not load face texture:', error)
   );
-
   faceTexture.colorSpace = THREE.SRGBColorSpace;
 
   const face = new THREE.Mesh(
@@ -280,7 +334,6 @@ function createCharacter() {
       depthWrite: false
     })
   );
-
   face.position.set(0, 4.5, -0.585);
   face.rotation.y = Math.PI;
   face.renderOrder = 3;
@@ -308,7 +361,6 @@ function createCharacter() {
     makeArm('Left Arm', -1.5),
     makeArm('Right Arm', 1.5)
   ];
-
   const legs = [
     makeLeg('Left Leg', -0.5),
     makeLeg('Right Leg', 0.5)
@@ -318,7 +370,6 @@ function createCharacter() {
   root.userData.legs = legs;
   root.userData.limbs = [...arms, ...legs];
   root.userData.model = model;
-
   return root;
 }
 
@@ -333,10 +384,10 @@ function createNameLabel(text) {
   context.textAlign = 'center';
   context.textBaseline = 'middle';
   context.lineWidth = 9;
-  context.strokeStyle = 'rgba(0,0,0,0.85)';
-  context.strokeText(text, labelCanvas.width / 2, labelCanvas.height / 2);
-  context.fillStyle = '#ffffff';
-  context.fillText(text, labelCanvas.width / 2, labelCanvas.height / 2);
+  context.strokeStyle = 'rgba(0,0,0,.85)';
+  context.strokeText(text, 256, 64);
+  context.fillStyle = '#fff';
+  context.fillText(text, 256, 64);
 
   const texture = new THREE.CanvasTexture(labelCanvas);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -348,11 +399,9 @@ function createNameLabel(text) {
       depthTest: false
     })
   );
-
   sprite.scale.set(3.5, 0.88, 1);
   sprite.position.set(0, 6.15, 0);
   sprite.renderOrder = 10;
-
   return sprite;
 }
 
@@ -370,11 +419,9 @@ const hitbox = new THREE.Mesh(
     opacity: 0.95
   })
 );
-
 scene.add(hitbox);
 
 let hitboxVisible = true;
-
 document.getElementById('toggleHitbox').addEventListener('click', event => {
   hitboxVisible = !hitboxVisible;
   hitbox.visible = hitboxVisible;
@@ -382,9 +429,7 @@ document.getElementById('toggleHitbox').addEventListener('click', event => {
 });
 
 canvas.addEventListener('click', () => {
-  if (document.pointerLockElement !== canvas) {
-    canvas.requestPointerLock?.();
-  }
+  if (document.pointerLockElement !== canvas) canvas.requestPointerLock?.();
 });
 
 const keys = Object.create(null);
@@ -394,21 +439,15 @@ let walkTime = 0;
 
 window.addEventListener('keydown', event => {
   keys[event.code] = true;
-
   if (event.code === 'Space') {
     event.preventDefault();
-
     if (grounded) {
       verticalVelocity = 8.5;
       grounded = false;
     }
   }
 });
-
-window.addEventListener('keyup', event => {
-  keys[event.code] = false;
-});
-
+window.addEventListener('keyup', event => { keys[event.code] = false; });
 window.addEventListener('blur', () => {
   for (const key in keys) keys[key] = false;
 });
@@ -425,42 +464,34 @@ document.addEventListener('mousemove', event => {
   if (document.pointerLockElement === canvas) {
     cameraYaw -= event.movementX * 0.006;
     cameraPitch += event.movementY * 0.004;
-    cameraPitch = THREE.MathUtils.clamp(cameraPitch, -1.0, 1.1);
+    cameraPitch = THREE.MathUtils.clamp(cameraPitch, -1, 1.1);
   }
 });
 
 canvas.addEventListener('pointerdown', event => {
   if (document.pointerLockElement === canvas) return;
-
   dragging = true;
   lastX = event.clientX;
   lastY = event.clientY;
   canvas.setPointerCapture(event.pointerId);
 });
-
-canvas.addEventListener('pointerup', () => {
-  dragging = false;
-});
-
-canvas.addEventListener('pointercancel', () => {
-  dragging = false;
-});
-
+canvas.addEventListener('pointerup', () => { dragging = false; });
+canvas.addEventListener('pointercancel', () => { dragging = false; });
 canvas.addEventListener('pointermove', event => {
   if (!dragging || document.pointerLockElement === canvas) return;
-
   cameraYaw -= (event.clientX - lastX) * 0.006;
   cameraPitch += (event.clientY - lastY) * 0.004;
-  cameraPitch = THREE.MathUtils.clamp(cameraPitch, -1.0, 1.1);
-
+  cameraPitch = THREE.MathUtils.clamp(cameraPitch, -1, 1.1);
   lastX = event.clientX;
   lastY = event.clientY;
 });
-
 canvas.addEventListener('wheel', event => {
   event.preventDefault();
-  targetZoom += event.deltaY * 0.012;
-  targetZoom = THREE.MathUtils.clamp(targetZoom, 2.5, 22);
+  targetZoom = THREE.MathUtils.clamp(
+    targetZoom + event.deltaY * 0.012,
+    2.5,
+    22
+  );
 }, { passive: false });
 
 const clock = new THREE.Clock();
@@ -469,7 +500,8 @@ const forward = new THREE.Vector3();
 const right = new THREE.Vector3();
 const cameraTarget = new THREE.Vector3();
 const lookTarget = new THREE.Vector3();
-const playerHeadPosition = new THREE.Vector3();
+const bubbleWorldPosition = new THREE.Vector3();
+const bubbles = new Map();
 
 const PLAYER_SPEED = 9;
 const TURN_SPEED = 18;
@@ -479,62 +511,99 @@ function smoothAngle(current, target, amount) {
     Math.sin(target - current),
     Math.cos(target - current)
   );
-
   return current + difference * amount;
 }
 
-function updateChatBubblePosition() {
-  player.updateMatrixWorld(true);
+function getBubbleRecord(uid) {
+  let record = bubbles.get(uid);
+  if (record) return record;
 
-  playerHeadPosition.set(0, 6.1, 0);
-  player.localToWorld(playerHeadPosition);
-  playerHeadPosition.project(camera);
+  const element = document.createElement('div');
+  element.className = 'world-chat-bubble';
 
-  const x = (playerHeadPosition.x * 0.5 + 0.5) * window.innerWidth;
-  const y = (-playerHeadPosition.y * 0.5 + 0.5) * window.innerHeight;
+  const nameElement = document.createElement('strong');
+  const textElement = document.createElement('span');
+  element.append(nameElement, textElement);
+  document.body.appendChild(element);
 
-  if (
-    Number.isFinite(x) &&
-    Number.isFinite(y) &&
-    playerHeadPosition.z >= -1 &&
-    playerHeadPosition.z <= 1
-  ) {
-    chatBubble.style.left = x + 'px';
-    chatBubble.style.top = y + 'px';
-  }
+  record = {
+    element,
+    nameElement,
+    textElement,
+    expiresAt: 0
+  };
+
+  bubbles.set(uid, record);
+  return record;
 }
 
-function showChatBubble(name, message) {
-  chatBubbleName.textContent = name || username;
-  chatBubbleText.textContent = message || '';
-  chatBubble.classList.add('visible');
+function receiveChatMessage(message) {
+  if (!message || typeof message.uid !== 'string') return;
+  if (typeof message.text !== 'string' || !message.text.trim()) return;
 
-  clearTimeout(showChatBubble.timeout);
-  showChatBubble.timeout = setTimeout(() => {
-    chatBubble.classList.remove('visible');
-  }, 5000);
+  const record = getBubbleRecord(message.uid);
+  record.nameElement.textContent = String(message.name || 'Player').slice(0, 20);
+  record.textElement.textContent = message.text.slice(0, 180);
+  record.expiresAt = Date.now() + 5000;
+  record.element.classList.add('visible');
 }
 
 window.addEventListener('message', event => {
-  if (event.origin !== window.location.origin) return;
+  if (event.origin !== location.origin) return;
   if (event.source !== chatFrame.contentWindow) return;
-
-  const data = event.data;
-  if (!data || data.type !== 'freeform-chat-message') return;
-  if (typeof data.text !== 'string') return;
-
-  showChatBubble(data.name || username, data.text.slice(0, 180));
+  if (event.data?.type !== 'freeform-chat-message') return;
+  receiveChatMessage(event.data);
 });
+
+function updateChatBubbles() {
+  const playerMap = window.FreeFormRoomPlayers;
+
+  for (const [uid, record] of bubbles) {
+    if (Date.now() >= record.expiresAt) {
+      record.element.classList.remove('visible');
+      bubbles.delete(uid);
+      record.element.remove();
+      continue;
+    }
+
+    const character = uid === window.FreeForm?.user?.uid
+      ? player
+      : playerMap?.get(uid);
+
+    /*
+      The current multiplayer helper doesn't expose the signed-in UID for
+      the local player globally. For a message from the local player, show
+      the bubble above the local character when no remote match exists.
+    */
+    const target = character || player;
+
+    target.updateMatrixWorld(true);
+    bubbleWorldPosition.set(0, 6.25, 0);
+    target.localToWorld(bubbleWorldPosition);
+    bubbleWorldPosition.project(camera);
+
+    if (bubbleWorldPosition.z < -1 || bubbleWorldPosition.z > 1) {
+      record.element.style.display = 'none';
+      continue;
+    }
+
+    const x = (bubbleWorldPosition.x * .5 + .5) * window.innerWidth;
+    const y = (-bubbleWorldPosition.y * .5 + .5) * window.innerHeight;
+
+    record.element.style.display = 'block';
+    record.element.style.left = x + 'px';
+    record.element.style.top = y + 'px';
+  }
+}
 
 function animate() {
   requestAnimationFrame(animate);
-
   const dt = Math.min(clock.getDelta(), 0.05);
 
   forward.set(-Math.sin(cameraYaw), 0, -Math.cos(cameraYaw));
   right.set(Math.cos(cameraYaw), 0, -Math.sin(cameraYaw));
-
   direction.set(0, 0, 0);
+
   if (keys.KeyW) direction.add(forward);
   if (keys.KeyS) direction.sub(forward);
   if (keys.KeyA) direction.sub(right);
@@ -552,10 +621,10 @@ function animate() {
     );
 
     walkTime += dt * 11;
-    player.userData.legs[0].rotation.x = Math.sin(walkTime) * 0.65;
-    player.userData.legs[1].rotation.x = -Math.sin(walkTime) * 0.65;
-    player.userData.arms[0].rotation.x = -Math.sin(walkTime) * 0.45;
-    player.userData.arms[1].rotation.x = Math.sin(walkTime) * 0.45;
+    player.userData.legs[0].rotation.x = Math.sin(walkTime) * .65;
+    player.userData.legs[1].rotation.x = -Math.sin(walkTime) * .65;
+    player.userData.arms[0].rotation.x = -Math.sin(walkTime) * .45;
+    player.userData.arms[1].rotation.x = Math.sin(walkTime) * .45;
   } else {
     player.userData.limbs.forEach(limb => {
       limb.rotation.x = THREE.MathUtils.damp(limb.rotation.x, 0, 12, dt);
@@ -579,7 +648,6 @@ function animate() {
   hitbox.rotation.y = player.rotation.y;
 
   currentZoom = THREE.MathUtils.damp(currentZoom, targetZoom, 10, dt);
-
   const horizontalDistance = currentZoom * Math.cos(cameraPitch);
 
   cameraTarget.set(
@@ -589,15 +657,11 @@ function animate() {
   );
 
   camera.position.lerp(cameraTarget, 1 - Math.exp(-8 * dt));
-  lookTarget.set(
-    player.position.x,
-    player.position.y + 2.5,
-    player.position.z
-  );
-
+  lookTarget.set(player.position.x, player.position.y + 2.5, player.position.z);
   camera.lookAt(lookTarget);
+
   renderer.render(scene, camera);
-  updateChatBubblePosition();
+  updateChatBubbles();
 }
 
 function resizeGame() {
@@ -615,7 +679,7 @@ import('./assets/room-multiplayer.js')
     THREE,
     scene,
     player,
-    makeAvatar: colors => createCharacter(colors?.body || 0x888888),
+    makeAvatar: colors => createCharacter(colors),
     label: createNameLabel,
     room: 'swordFight'
   }))

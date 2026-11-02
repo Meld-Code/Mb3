@@ -195,55 +195,9 @@
 
     .chat-send:hover { background: #63e596; }
 
-    .chat-bubble {
-      position: fixed;
-      z-index: 9999;
-      max-width: 240px;
-      padding: 9px 12px;
-      transform: translate(-50%, -100%);
-      border: 1px solid rgba(255,255,255,.25);
-      border-radius: 12px 12px 12px 3px;
-      background: rgba(255,255,255,.96);
-      box-shadow: 0 5px 18px rgba(0,0,0,.22);
-      color: #18221c;
-      font-size: 13px;
-      line-height: 1.35;
-      overflow-wrap: anywhere;
-      pointer-events: none;
-      animation: bubble-in .18s ease-out;
-    }
-
-    .chat-bubble[hidden] { display: none; }
-
-    .chat-bubble::after {
-      content: "";
-      position: absolute;
-      bottom: -7px;
-      left: 13px;
-      width: 12px;
-      height: 12px;
-      transform: rotate(45deg);
-      border-right: 1px solid rgba(255,255,255,.25);
-      border-bottom: 1px solid rgba(255,255,255,.25);
-      background: rgba(255,255,255,.96);
-    }
-
-    .chat-bubble-name {
-      display: block;
-      margin-bottom: 3px;
-      color: #168746;
-      font-size: 10px;
-      font-weight: 800;
-    }
-
     @keyframes message-in {
       from { opacity: 0; transform: translateY(4px); }
       to { opacity: 1; transform: translateY(0); }
-    }
-
-    @keyframes bubble-in {
-      from { opacity: 0; transform: translate(-50%, -90%) scale(.94); }
-      to { opacity: 1; transform: translate(-50%, -100%) scale(1); }
     }
 
     @media (max-width: 520px) {
@@ -260,7 +214,7 @@
         <i class="fa-solid fa-comments" aria-hidden="true"></i>
         <span>Game chat</span>
       </div>
-  <div class="chat-state" id="chatState" aria-live="polite">
+  <div class="chat-state" aria-live="polite">
     <span class="chat-state-dot"></span>
     <span id="chatStateText">Local chat</span>
   </div>
@@ -290,67 +244,40 @@
 </form>
 
   </section>
-  <!-- This bubble appears inside the iframe. It can be positioned with the
-       setPlayerScreenPosition message from the parent game page. -->
-  <div class="chat-bubble" id="chatBubble" hidden>
-    <span class="chat-bubble-name" id="bubbleName"></span>
-    <span id="bubbleText"></span>
-  </div>
   <script src="assets/freeform.js"></script>
   <script>
     (() => {
       const params = new URLSearchParams(window.location.search);
-      const game = (params.get('game') || 'game').replace(/[^a-z0-9_-]/gi, '').slice(0, 40);
+      const game = (params.get('game') || 'game')
+        .replace(/[^a-z0-9_-]/gi, '')
+        .slice(0, 40);
+
       const playerName = window.FreeForm?.getSession?.() || 'Guest';
-
-      const chatMessages = document.getElementById('chatMessages');
-      const chatForm = document.getElementById('chatForm');
-      const chatInput = document.getElementById('chatInput');
-      const chatError = document.getElementById('chatError');
-      const chatBubble = document.getElementById('chatBubble');
-      const bubbleName = document.getElementById('bubbleName');
-      const bubbleText = document.getElementById('bubbleText');
-      const chatStateText = document.getElementById('chatStateText');
-
       const clientId = window.crypto?.randomUUID
         ? window.crypto.randomUUID()
         : String(Date.now()) + Math.random().toString(36).slice(2);
 
       const storageKey = 'freeformChat:' + game;
       const maxStoredMessages = 60;
-      let bubbleTimeout = null;
-      let bubblePosition = { x: window.innerWidth / 2, y: window.innerHeight * .3 };
 
-      function updateBubblePosition() {
-        chatBubble.style.left = bubblePosition.x + 'px';
-        chatBubble.style.top = bubblePosition.y + 'px';
-      }
+      const chatMessages = document.getElementById('chatMessages');
+      const chatForm = document.getElementById('chatForm');
+      const chatInput = document.getElementById('chatInput');
+      const chatError = document.getElementById('chatError');
 
-      function showBubble(name, text) {
-        bubbleName.textContent = name;
-        bubbleText.textContent = text;
-        updateBubblePosition();
-        chatBubble.hidden = false;
-
-        clearTimeout(bubbleTimeout);
-        bubbleTimeout = setTimeout(() => {
-          chatBubble.hidden = true;
-        }, 5000);
-      }
-
-      function addMessage(message, isOwn) {
+      function renderMessage(message, own) {
         const empty = document.getElementById('chatEmpty');
         if (empty) empty.remove();
 
         const item = document.createElement('article');
-        item.className = 'chat-message' + (isOwn ? ' own' : '');
+        item.className = 'chat-message' + (own ? ' own' : '');
 
         const meta = document.createElement('div');
         meta.className = 'message-meta';
 
-        const sender = document.createElement('span');
-        sender.className = 'message-name';
-        sender.textContent = message.name || 'Guest';
+        const name = document.createElement('span');
+        name.className = 'message-name';
+        name.textContent = message.name || 'Guest';
 
         const time = document.createElement('time');
         const date = new Date(message.time || Date.now());
@@ -360,35 +287,27 @@
           minute: '2-digit'
         });
 
-        meta.append(sender, time);
+        meta.append(name, time);
 
-        const content = document.createElement('div');
-        content.className = 'message-bubble';
-        content.textContent = message.text;
+        const text = document.createElement('div');
+        text.className = 'message-bubble';
+        text.textContent = message.text;
 
-        item.append(meta, content);
+        item.append(meta, text);
         chatMessages.appendChild(item);
         chatMessages.scrollTop = chatMessages.scrollHeight;
-
-        if (isOwn) showBubble(message.name || 'Guest', message.text);
       }
 
-      function loadMessages() {
+      function readStoredMessages() {
         try {
-          const saved = JSON.parse(localStorage.getItem(storageKey) || '[]');
-          if (!Array.isArray(saved)) return;
-
-          saved.slice(-maxStoredMessages).forEach(message => {
-            if (message && typeof message.text === 'string') {
-              addMessage(message, message.clientId === clientId);
-            }
-          });
-        } catch (error) {
-          console.warn('Could not load saved chat messages.', error);
+          const messages = JSON.parse(localStorage.getItem(storageKey) || '[]');
+          return Array.isArray(messages) ? messages : [];
+        } catch {
+          return [];
         }
       }
 
-      function saveMessage(text) {
+      function sendMessage(text) {
         const message = {
           name: playerName,
           text: text.slice(0, 180),
@@ -396,19 +315,34 @@
           clientId
         };
 
-        let messages = [];
+        const messages = readStoredMessages();
+        messages.push(message);
+
         try {
-          messages = JSON.parse(localStorage.getItem(storageKey) || '[]');
-          if (!Array.isArray(messages)) messages = [];
-        } catch {
-          messages = [];
+          localStorage.setItem(
+            storageKey,
+            JSON.stringify(messages.slice(-maxStoredMessages))
+          );
+        } catch (error) {
+          console.warn('Chat message could not be saved locally.', error);
         }
 
-        messages.push(message);
-        messages = messages.slice(-maxStoredMessages);
-        localStorage.setItem(storageKey, JSON.stringify(messages));
-        addMessage(message, true);
+        renderMessage(message, true);
+
+        /*
+          Tell the parent game page to show the character speech bubble.
+          The game page must listen for this exact message type.
+        */
+        window.parent.postMessage({
+          type: 'freeform-chat-message',
+          name: playerName,
+          text: message.text
+        }, window.location.origin);
       }
+
+      readStoredMessages()
+        .slice(-maxStoredMessages)
+        .forEach(message => renderMessage(message, message.clientId === clientId));
 
       chatForm.addEventListener('submit', event => {
         event.preventDefault();
@@ -419,13 +353,13 @@
         chatError.textContent = '';
 
         try {
-          saveMessage(text);
+          sendMessage(text);
           chatInput.value = '';
           chatInput.style.height = '36px';
           chatInput.focus();
         } catch (error) {
-          console.error('Could not save chat message.', error);
-          chatError.textContent = 'Could not save the message in this browser.';
+          console.error('Could not send chat message.', error);
+          chatError.textContent = 'Message could not be sent.';
         }
       });
 
@@ -441,64 +375,21 @@
         chatInput.style.height = Math.min(chatInput.scrollHeight, 88) + 'px';
       });
 
-      /*
-        The parent game page can position this bubble by sending:
-        iframe.contentWindow.postMessage(
-          { type: 'freeform-chat-position', x: 400, y: 180 },
-          location.origin
-        );
-      */
-      window.addEventListener('message', event => {
-        if (event.origin !== window.location.origin) return;
-
-        const data = event.data;
-        if (!data || data.type !== 'freeform-chat-position') return;
-        if (!Number.isFinite(data.x) || !Number.isFinite(data.y)) return;
-
-        bubblePosition = { x: data.x, y: data.y };
-        updateBubblePosition();
-      });
-
-      /*
-        Local storage events let other same-origin tabs show new messages.
-        This is not a live multiplayer replacement for Firebase.
-      */
       window.addEventListener('storage', event => {
         if (event.key !== storageKey || !event.newValue) return;
 
         try {
           const messages = JSON.parse(event.newValue);
-          if (!Array.isArray(messages) || messages.length === 0) return;
+          if (!Array.isArray(messages)) return;
 
           const latest = messages[messages.length - 1];
-          if (latest.clientId !== clientId) addMessage(latest, false);
+          if (!latest || latest.clientId === clientId) return;
+
+          renderMessage(latest, false);
         } catch (error) {
           console.warn('Could not read updated chat messages.', error);
         }
       });
-
-      window.addEventListener('resize', () => {
-        if (bubblePosition.x === 0 || bubblePosition.y === 0) {
-          bubblePosition = {
-            x: window.innerWidth / 2,
-            y: window.innerHeight * .3
-          };
-          updateBubblePosition();
-        }
-      });
-
-      window.FreeFormChat = {
-        game,
-        showBubble,
-        setPlayerScreenPosition(x, y) {
-          if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-          bubblePosition = { x, y };
-          updateBubblePosition();
-        }
-      };
-
-      loadMessages();
-      chatStateText.textContent = 'Local chat';
     })();
   </script>
 </body>
